@@ -10,15 +10,19 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final configuration = ApiConfiguration.fromEnvironment();
-  final repository = await TranscriptRepository.createDefault(configuration: configuration);
+  final repository = await TranscriptRepository.createDefault(
+    configuration: configuration,
+  );
 
   runApp(
     KiranaApp(
       repository: repository,
       additionalDestinations: kiranaVoiceDashboardDestinations(
         repository: repository,
-        voiceCaptureFactory: () => ContinuousVadVoiceCapture(
-          transcriber: KiranaVoiceTranscriptionClient(configuration: configuration),
+        voiceCaptureFactory: () => TapToRecordVoiceCapture(
+          transcriber: KiranaVoiceTranscriptionClient(
+            configuration: configuration,
+          ),
         ),
       ),
     ),

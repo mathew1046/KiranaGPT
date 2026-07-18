@@ -35,10 +35,10 @@ class Settings:
     app_env: str = "development"
     cors_allow_origins: tuple[str, ...] = ()
     openai_api_key: str | None = None
-    openai_transcription_model: str = "whisper-1"
-    openai_extraction_model: str = "gpt-5.4-mini"
-    openai_escalation_model: str = "gpt-5.4-mini"
-    openai_query_model: str = "gpt-5.4-mini"
+    openai_audio_model: str = "gpt-audio-1.5"
+    openai_extraction_model: str = "gpt-5.5"
+    openai_escalation_model: str = "gpt-5.5"
+    openai_query_model: str = "gpt-5.5"
     model_dir: Path = Path("../models")
 
     @classmethod
@@ -56,10 +56,10 @@ class Settings:
             app_env=app_env,
             cors_allow_origins=_parse_csv(os.getenv("CORS_ALLOW_ORIGINS", "")),
             openai_api_key=openai_api_key,
-            openai_transcription_model=os.getenv("OPENAI_TRANSCRIPTION_MODEL", "whisper-1").strip(),
-            openai_extraction_model=os.getenv("OPENAI_EXTRACTION_MODEL", "gpt-5.4-mini").strip(),
-            openai_escalation_model=os.getenv("OPENAI_ESCALATION_MODEL", "gpt-5.4-mini").strip(),
-            openai_query_model=os.getenv("OPENAI_QUERY_MODEL", "gpt-5.4-mini").strip(),
+            openai_audio_model=os.getenv("OPENAI_AUDIO_MODEL", "gpt-audio-1.5").strip(),
+            openai_extraction_model=os.getenv("OPENAI_EXTRACTION_MODEL", "gpt-5.5").strip(),
+            openai_escalation_model=os.getenv("OPENAI_ESCALATION_MODEL", "gpt-5.5").strip(),
+            openai_query_model=os.getenv("OPENAI_QUERY_MODEL", "gpt-5.5").strip(),
             model_dir=Path(os.getenv("MODEL_DIR", "../models")),
         )
         settings.validate()

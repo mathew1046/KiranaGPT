@@ -53,8 +53,6 @@ class DashboardController extends ChangeNotifier {
     await _voiceCapture.toggleListening();
   }
 
-  Future<void> startContinuousCapture() => _voiceCapture.startListening();
-
   /// Updates an in-memory draft from the browser/manual entry fallback.
   void updateTranscript(String transcript) {
     _voiceCapture.setManualTranscript(transcript);

@@ -39,16 +39,16 @@ class OpenAISettings:
     """Environment-configured model selection without exposing API secrets."""
 
     api_key: str | None = field(default=None, repr=False)
-    transcription_model: str = "whisper-1"
-    extraction_model: str = "gpt-5.4-mini"
-    escalation_model: str = "gpt-5.4-mini"
-    query_model: str = "gpt-5.4-mini"
+    audio_model: str = "gpt-audio-1.5"
+    extraction_model: str = "gpt-5.5"
+    escalation_model: str = "gpt-5.5"
+    query_model: str = "gpt-5.5"
     max_attempts: int = 2
 
     def __post_init__(self) -> None:
         if self.max_attempts < 1 or self.max_attempts > 3:
             raise ValueError("max_attempts must be between 1 and 3")
-        if not self.transcription_model or not all(self.model_for(role) for role in ModelRole):
+        if not self.audio_model or not all(self.model_for(role) for role in ModelRole):
             raise ValueError("OpenAI model names must not be empty")
 
     @classmethod
@@ -63,10 +63,10 @@ class OpenAISettings:
             attempts = 2
         return cls(
             api_key=(source.get("OPENAI_API_KEY") or "").strip() or None,
-            transcription_model=(source.get("OPENAI_TRANSCRIPTION_MODEL") or "whisper-1").strip(),
-            extraction_model=(source.get("OPENAI_EXTRACTION_MODEL") or "gpt-5.4-mini").strip(),
-            escalation_model=(source.get("OPENAI_ESCALATION_MODEL") or "gpt-5.4-mini").strip(),
-            query_model=(source.get("OPENAI_QUERY_MODEL") or "gpt-5.4-mini").strip(),
+            audio_model=(source.get("OPENAI_AUDIO_MODEL") or "gpt-audio-1.5").strip(),
+            extraction_model=(source.get("OPENAI_EXTRACTION_MODEL") or "gpt-5.5").strip(),
+            escalation_model=(source.get("OPENAI_ESCALATION_MODEL") or "gpt-5.5").strip(),
+            query_model=(source.get("OPENAI_QUERY_MODEL") or "gpt-5.5").strip(),
             max_attempts=attempts,
         )
 
@@ -76,10 +76,10 @@ class OpenAISettings:
 
         return cls(
             api_key=getattr(settings, "openai_api_key", None),
-            transcription_model=getattr(settings, "openai_transcription_model", "whisper-1"),
-            extraction_model=getattr(settings, "openai_extraction_model", "gpt-5.4-mini"),
-            escalation_model=getattr(settings, "openai_escalation_model", "gpt-5.4-mini"),
-            query_model=getattr(settings, "openai_query_model", "gpt-5.4-mini"),
+            audio_model=getattr(settings, "openai_audio_model", "gpt-audio-1.5"),
+            extraction_model=getattr(settings, "openai_extraction_model", "gpt-5.5"),
+            escalation_model=getattr(settings, "openai_escalation_model", "gpt-5.5"),
+            query_model=getattr(settings, "openai_query_model", "gpt-5.5"),
         )
 
     def model_for(self, role: ModelRole) -> str:

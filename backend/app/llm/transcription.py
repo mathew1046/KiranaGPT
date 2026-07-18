@@ -1,14 +1,15 @@
-"""Transient OpenAI Whisper transcription for VAD-delimited audio."""
+"""Transient GPT-audio transcription for one user-controlled recording."""
 
 from __future__ import annotations
 
+import base64
 from typing import Any
 
 from .adapter import OpenAISettings
 
 
-class OpenAITranscriptionService:
-    """Send one in-memory audio segment to Whisper without persisting it."""
+class OpenAIAudioTranscriptionService:
+    """Send one in-memory WAV recording to GPT-audio without persisting it."""
 
     def __init__(self, settings: OpenAISettings, *, client: Any | None = None) -> None:
         self._settings = settings
@@ -21,11 +22,35 @@ class OpenAITranscriptionService:
         if client is None:
             return None
         try:
-            response = client.audio.transcriptions.create(
-                model=self._settings.transcription_model,
-                file=(filename, audio, content_type),
+            response = client.chat.completions.create(
+                model=self._settings.audio_model,
+                modalities=["text"],
+                store=False,
+                messages=[
+                    {
+                        "role": "developer",
+                        "content": (
+                            "Transcribe the spoken shop update exactly in its original language. "
+                            "Return only the transcript: no explanation, labels, or inferred details."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "input_audio",
+                                "input_audio": {
+                                    "data": base64.b64encode(audio).decode("ascii"),
+                                    "format": "wav",
+                                },
+                            }
+                        ],
+                    },
+                ],
             )
-            text = response.get("text") if isinstance(response, dict) else getattr(response, "text", None)
+            choices = response.get("choices") if isinstance(response, dict) else getattr(response, "choices", None)
+            message = choices[0].get("message") if isinstance(choices, list) and isinstance(choices[0], dict) else getattr(choices[0], "message", None) if choices else None
+            text = message.get("content") if isinstance(message, dict) else getattr(message, "content", None)
             return text.strip() if isinstance(text, str) and text.strip() else None
         except Exception:
             # Provider failures may contain audio/request metadata; never surface it.

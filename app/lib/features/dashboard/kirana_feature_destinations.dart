@@ -14,9 +14,9 @@ import 'package:kirana_gpt/ui/adaptive_shell.dart';
 /// ),
 /// ```
 ///
-/// Supplying a [voiceCaptureFactory] creates one native VAD session per
-/// dashboard instance. This prevents a disposed microphone session from being
-/// reused after navigation or a rebuild.
+/// Supplying a [voiceCaptureFactory] creates one recorder per dashboard
+/// instance, preventing a disposed microphone session from being reused after
+/// navigation or a rebuild.
 List<KiranaDestination> kiranaVoiceDashboardDestinations({
   required TranscriptRepository repository,
   VoiceCapturePort Function()? voiceCaptureFactory,

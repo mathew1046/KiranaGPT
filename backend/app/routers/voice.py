@@ -1,4 +1,4 @@
-"""Protected, memory-only audio transcription endpoint."""
+"""Protected, memory-only audio processing endpoint."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..dependencies import require_api_key
 from ..llm.adapter import OpenAISettings
-from ..llm.transcription import OpenAITranscriptionService
+from ..llm.transcription import OpenAIAudioTranscriptionService
 
 
 MAX_AUDIO_BYTES = 10 * 1024 * 1024
@@ -39,7 +39,7 @@ async def transcribe_audio(
     request: Request,
     audio: UploadFile,
 ) -> TranscriptionResponse:
-    """Transcribe a short VAD-delimited WAV segment without writing it to disk."""
+    """Process one user-controlled WAV recording without writing it to disk."""
 
     content_type = (audio.content_type or "").lower()
     if content_type not in ALLOWED_CONTENT_TYPES:
@@ -54,7 +54,7 @@ async def transcribe_audio(
     if payload[:4] != b"RIFF" or payload[8:12] != b"WAVE":
         raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Valid WAV audio required")
 
-    service = OpenAITranscriptionService(
+    service = OpenAIAudioTranscriptionService(
         OpenAISettings.from_runtime_settings(request.app.state.settings)
     )
     transcript = service.transcribe(

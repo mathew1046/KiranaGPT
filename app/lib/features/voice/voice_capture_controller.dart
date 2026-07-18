@@ -32,8 +32,7 @@ class VoiceCaptureController extends ChangeNotifier {
   String? get message => _message;
   bool get isCapturing => _capturePort.isListening;
 
-  /// Starts VAD and leaves it listening until the dashboard is closed or the
-  /// user explicitly stops it. Each detected speech turn is transcribed.
+  /// Starts one recording. The user explicitly stops it before processing.
   Future<VoiceCaptureResult> startListening() async {
     _status = VoiceCaptureStatus.capturing;
     _message = null;
@@ -44,7 +43,8 @@ class VoiceCaptureController extends ChangeNotifier {
       result = await _capturePort.startListening(_handleResult);
     } catch (_) {
       result = const VoiceCaptureResult.failed(
-        message: 'Voice capture could not start. Type the approved transcript instead.',
+        message:
+            'Voice capture could not start. Type the approved transcript instead.',
       );
     }
     _applyResult(result);
@@ -57,7 +57,8 @@ class VoiceCaptureController extends ChangeNotifier {
     return result;
   }
 
-  Future<VoiceCaptureResult> toggleListening() => isCapturing ? stopListening() : startListening();
+  Future<VoiceCaptureResult> toggleListening() =>
+      isCapturing ? stopListening() : startListening();
 
   void _handleResult(VoiceCaptureResult result) {
     _applyResult(result);

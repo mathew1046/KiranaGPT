@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:kirana_gpt/core/api/api_configuration.dart';
 
-/// The phone sends only a short, VAD-delimited WAV segment over TLS.
+/// The phone sends one user-controlled WAV recording over TLS.
 ///
 /// The OpenAI API key remains on the backend; this client uses only the
 /// application bearer token already required by the Kirana API.
@@ -34,20 +34,18 @@ class KiranaVoiceTranscriptionClient implements VoiceTranscriptionGateway {
       throw const VoiceTranscriptionException('No speech was detected.');
     }
 
-    final request = http.MultipartRequest(
-      'POST',
-      configuration.endpoint('/v1/transcribe'),
-    )
-      ..headers['accept'] = 'application/json'
-      ..headers['authorization'] = 'Bearer ${configuration.apiKey}'
-      ..files.add(
-        http.MultipartFile.fromBytes(
-          'audio',
-          wavBytes,
-          filename: 'utterance.wav',
-          contentType: MediaType('audio', 'wav'),
-        ),
-      );
+    final request =
+        http.MultipartRequest('POST', configuration.endpoint('/v1/transcribe'))
+          ..headers['accept'] = 'application/json'
+          ..headers['authorization'] = 'Bearer ${configuration.apiKey}'
+          ..files.add(
+            http.MultipartFile.fromBytes(
+              'audio',
+              wavBytes,
+              filename: 'utterance.wav',
+              contentType: MediaType('audio', 'wav'),
+            ),
+          );
 
     try {
       final response = await request.send().timeout(requestTimeout);
