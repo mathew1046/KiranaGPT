@@ -1,0 +1,12 @@
+# Runtime
+fastapi==0.115.12
+uvicorn[standard]==0.34.0
+SQLAlchemy==2.0.51
+pydantic==2.13.4
+# Pin the FastAPI worker-thread runtime for reproducible local tests.
+anyio==4.10.0
+openai==2.46.0
+
+# Test/runtime HTTP client used by FastAPI's TestClient
+httpx==0.28.1
+pytest==9.1.1
