@@ -53,6 +53,7 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
   @override
   Widget build(BuildContext context) {
     final isRecording = _voiceCaptureController.isCapturing;
+    final isProcessing = _voiceCaptureController.isProcessing;
     return SafeArea(
       top: false,
       child: Center(
@@ -87,11 +88,26 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
               const SizedBox(height: 12),
               FilledButton.icon(
                 key: const Key('record-manual-transcript-button'),
-                onPressed: _controller.isSaving || _controller.isApproving
+                onPressed:
+                    _controller.isSaving ||
+                        _controller.isApproving ||
+                        isProcessing
                     ? null
                     : _voiceCaptureController.toggleListening,
-                icon: Icon(isRecording ? Icons.stop : Icons.mic),
-                label: Text(isRecording ? 'Stop recording' : 'Record update'),
+                icon: Icon(
+                  isProcessing
+                      ? Icons.hourglass_top
+                      : isRecording
+                      ? Icons.stop
+                      : Icons.mic,
+                ),
+                label: Text(
+                  isProcessing
+                      ? 'Processing audio…'
+                      : isRecording
+                      ? 'Stop recording'
+                      : 'Record update',
+                ),
               ),
               OutlinedButton.icon(
                 key: const Key('analyze-manual-transcript-button'),

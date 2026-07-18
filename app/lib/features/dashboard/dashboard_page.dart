@@ -56,6 +56,7 @@ class _KiranaDashboardPageState extends State<KiranaDashboardPage> {
     final manualOnly =
         voice.availability == VoiceCaptureAvailability.manualOnly;
     final isRecording = voice.isCapturing;
+    final isProcessing = voice.isProcessing;
     final pending = _controller.queueStatus.pending;
     final confirmation = _controller.confirmation;
 
@@ -98,12 +99,23 @@ class _KiranaDashboardPageState extends State<KiranaDashboardPage> {
                       const SizedBox(height: 16),
                       FilledButton.icon(
                         key: const Key('dashboard-capture-button'),
-                        onPressed: _controller.isQueueing || manualOnly
+                        onPressed:
+                            _controller.isQueueing || manualOnly || isProcessing
                             ? null
                             : _controller.beginCapture,
-                        icon: Icon(isRecording ? Icons.stop : Icons.mic),
+                        icon: Icon(
+                          isProcessing
+                              ? Icons.hourglass_top
+                              : isRecording
+                              ? Icons.stop
+                              : Icons.mic,
+                        ),
                         label: Text(
-                          isRecording ? 'Stop and process' : 'Record update',
+                          isProcessing
+                              ? 'Processing audio…'
+                              : isRecording
+                              ? 'Stop and process'
+                              : 'Record update',
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -181,6 +193,7 @@ class _KiranaDashboardPageState extends State<KiranaDashboardPage> {
     return switch (status) {
       VoiceCaptureStatus.ready => 'Tap record, speak, then tap stop.',
       VoiceCaptureStatus.capturing => 'Recording now. Tap stop when finished.',
+      VoiceCaptureStatus.processing => 'Processing your recording…',
       VoiceCaptureStatus.transcriptReady =>
         'Transcript ready. Check it before approving.',
       VoiceCaptureStatus.cancelled => 'No recording was sent.',

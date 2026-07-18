@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:kirana_gpt/data/transcript_repository.dart';
 import 'package:kirana_gpt/core/api/api_configuration.dart';
 import 'package:kirana_gpt/features/dashboard/dashboard_page.dart';
+import 'package:kirana_gpt/features/shop/database_view_page.dart';
 import 'package:kirana_gpt/features/shop/stock_credits_page.dart';
 import 'package:kirana_gpt/features/voice/voice_capture.dart';
 import 'package:kirana_gpt/ui/adaptive_shell.dart';
@@ -24,10 +25,16 @@ List<KiranaDestination> kiranaVoiceDashboardDestinations({
 }) {
   return [
     KiranaDestination(
-      label: 'Stock & credits',
-      icon: Icons.inventory_2_outlined,
-      selectedIcon: Icons.inventory_2,
+      label: 'Manual CRUD',
+      icon: Icons.edit_note_outlined,
+      selectedIcon: Icons.edit_note,
       builder: (_) => StockCreditsPage(configuration: configuration),
+    ),
+    KiranaDestination(
+      label: 'Database view',
+      icon: Icons.storage_outlined,
+      selectedIcon: Icons.storage,
+      builder: (_) => DatabaseViewPage(configuration: configuration),
     ),
     KiranaDestination(
       label: 'Dashboard',

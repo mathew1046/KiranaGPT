@@ -60,6 +60,7 @@ typedef VoiceCaptureListener = void Function(VoiceCaptureResult result);
 abstract interface class VoiceCapturePort {
   VoiceCaptureAvailability get availability;
   bool get isListening;
+  bool get isProcessing;
 
   Future<VoiceCaptureResult> startListening(VoiceCaptureListener onResult);
   Future<VoiceCaptureResult> stopListening();
@@ -74,6 +75,9 @@ class UnavailableVoiceCapture implements VoiceCapturePort {
 
   @override
   bool get isListening => false;
+
+  @override
+  bool get isProcessing => false;
 
   @override
   Future<VoiceCaptureResult> startListening(
@@ -104,6 +108,7 @@ class TapToRecordVoiceCapture implements VoiceCapturePort {
   StreamSubscription<Uint8List>? _audioSubscription;
   Completer<void>? _streamFinished;
   bool _isListening = false;
+  bool _isProcessing = false;
   bool _isDisposed = false;
 
   @override
@@ -113,6 +118,9 @@ class TapToRecordVoiceCapture implements VoiceCapturePort {
 
   @override
   bool get isListening => _isListening;
+
+  @override
+  bool get isProcessing => _isProcessing;
 
   @override
   Future<VoiceCaptureResult> startListening(
@@ -128,7 +136,7 @@ class TapToRecordVoiceCapture implements VoiceCapturePort {
         message: 'Voice capture is no longer available.',
       );
     }
-    if (_isListening) {
+    if (_isListening || _isProcessing) {
       return const VoiceCaptureResult.listening();
     }
 
@@ -171,9 +179,13 @@ class TapToRecordVoiceCapture implements VoiceCapturePort {
 
   @override
   Future<VoiceCaptureResult> stopListening() async {
-    if (!_isListening) {
+    if (!_isListening || _isProcessing) {
       return const VoiceCaptureResult.cancelled();
     }
+    // Mark the recording as stopped before awaiting platform cleanup. This
+    // makes a second tap unable to race a second recorder.stop()/takeBytes().
+    _isListening = false;
+    _isProcessing = true;
     try {
       await _recorder.stop();
       await _streamFinished?.future.timeout(
@@ -199,6 +211,7 @@ class TapToRecordVoiceCapture implements VoiceCapturePort {
       );
     } finally {
       _isListening = false;
+      _isProcessing = false;
     }
   }
 
@@ -210,6 +223,7 @@ class TapToRecordVoiceCapture implements VoiceCapturePort {
       await _recorder.cancel();
     }
     _isListening = false;
+    _isProcessing = false;
     await _audioSubscription?.cancel();
     await _recorder.dispose();
   }

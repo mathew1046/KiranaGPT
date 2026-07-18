@@ -6,6 +6,7 @@ import 'package:kirana_gpt/features/voice/voice_capture.dart';
 enum VoiceCaptureStatus {
   ready,
   capturing,
+  processing,
   manualEntry,
   transcriptReady,
   cancelled,
@@ -31,6 +32,7 @@ class VoiceCaptureController extends ChangeNotifier {
   String? get draftTranscript => _draftTranscript;
   String? get message => _message;
   bool get isCapturing => _capturePort.isListening;
+  bool get isProcessing => _capturePort.isProcessing;
 
   /// Starts one recording. The user explicitly stops it before processing.
   Future<VoiceCaptureResult> startListening() async {
@@ -52,13 +54,21 @@ class VoiceCaptureController extends ChangeNotifier {
   }
 
   Future<VoiceCaptureResult> stopListening() async {
+    if (_capturePort.isProcessing) {
+      return const VoiceCaptureResult.cancelled();
+    }
+    _status = VoiceCaptureStatus.processing;
+    _message = 'Processing audio…';
+    notifyListeners();
     final result = await _capturePort.stopListening();
     _applyResult(result);
     return result;
   }
 
-  Future<VoiceCaptureResult> toggleListening() =>
-      isCapturing ? stopListening() : startListening();
+  Future<VoiceCaptureResult> toggleListening() {
+    if (isProcessing) return Future.value(const VoiceCaptureResult.cancelled());
+    return isCapturing ? stopListening() : startListening();
+  }
 
   void _handleResult(VoiceCaptureResult result) {
     _applyResult(result);

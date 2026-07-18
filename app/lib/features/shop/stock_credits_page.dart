@@ -201,7 +201,7 @@ class _StockCreditsPageState extends State<StockCreditsPage> {
                   children: [
                     Expanded(
                       child: Text(
-                        'Stock & credits',
+                        'Manual CRUD',
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
                     ),
@@ -274,7 +274,7 @@ class _StockCreditsPageState extends State<StockCreditsPage> {
                   )
                 else ...[
                   _Section(
-                    title: 'Current stock',
+                    title: 'Edit or remove stock',
                     child: _StockList(
                       items: result.data!.stock,
                       onEdit: _editStock,
