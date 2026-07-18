@@ -55,6 +55,45 @@ class ManualEntryController extends ChangeNotifier {
     }
   }
 
+  /// Sends one approved manual update through the GPT-5.5 backend workflow.
+  ///
+  /// The repository first writes the transcript to the local queue, so a
+  /// temporary network failure never loses a recorded update. Successful sync
+  /// means the backend validated the model JSON and persisted the operation.
+  Future<bool> analyzeTranscript(String transcript) async {
+    _isSaving = true;
+    _isSyncing = true;
+    _message = null;
+    notifyListeners();
+    try {
+      final queued = await _repository.addManualTranscript(transcript);
+      final result = await _repository.syncPending();
+      _items = await _repository.loadQueue();
+      final updated = _items.where(
+        (item) => item.clientEventId == queued.clientEventId,
+      );
+      final state = updated.isEmpty ? null : updated.first.syncState;
+      if (state == TranscriptSyncState.synced) {
+        _message = 'Update analyzed by GPT-5.5 and saved.';
+        return true;
+      }
+      _message = result.message ?? _syncMessage(result);
+      return false;
+    } on ArgumentError {
+      _message = 'Enter an update before asking the assistant to analyze it.';
+      return false;
+    } catch (_) {
+      _message =
+          'Analysis could not finish. The transcript stays queued safely.';
+      _items = await _repository.loadQueue();
+      return false;
+    } finally {
+      _isSaving = false;
+      _isSyncing = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> sync() async {
     if (_isSyncing) {
       return;

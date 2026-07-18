@@ -22,6 +22,7 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
   late final ManualEntryController _controller;
   late final TextEditingController _textController;
   late final VoiceCaptureController _voiceCaptureController;
+  String? _lastAutoAnalyzedTranscript;
 
   @override
   void initState() {
@@ -67,7 +68,9 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
               const SizedBox(height: 6),
-              const Text('Record or type one update, then queue it.'),
+              const Text(
+                'Recording is transcribed, then analyzed and saved automatically.',
+              ),
               const SizedBox(height: 20),
               TextField(
                 key: const Key('manual-transcript-field'),
@@ -86,9 +89,7 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
               const SizedBox(height: 12),
               FilledButton.icon(
                 key: const Key('record-manual-transcript-button'),
-                onPressed: _controller.isSaving
-                    ? null
-                    : _voiceCaptureController.toggleListening,
+                onPressed: _controller.isSaving ? null : _toggleRecording,
                 icon: Icon(isRecording ? Icons.stop : Icons.mic),
                 label: Text(isRecording ? 'Stop and process' : 'Record update'),
               ),
@@ -96,7 +97,18 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
               FilledButton(
                 key: const Key('queue-transcript-button'),
                 onPressed: _controller.isSaving ? null : _addTranscript,
-                child: Text(_controller.isSaving ? 'Saving…' : 'Queue update'),
+                child: Text(
+                  _controller.isSaving ? 'Saving…' : 'Queue for later',
+                ),
+              ),
+              OutlinedButton.icon(
+                key: const Key('analyze-manual-transcript-button'),
+                onPressed:
+                    _controller.isSaving || _textController.text.trim().isEmpty
+                    ? null
+                    : _analyzeTranscript,
+                icon: const Icon(Icons.auto_awesome),
+                label: const Text('Analyze update'),
               ),
               TextButton.icon(
                 key: const Key('sync-queue-button'),
@@ -129,6 +141,21 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
     }
   }
 
+  Future<void> _analyzeTranscript() async {
+    final analyzed = await _controller.analyzeTranscript(_textController.text);
+    if (analyzed && mounted) {
+      _textController.clear();
+      FocusScope.of(context).unfocus();
+    }
+  }
+
+  Future<void> _toggleRecording() {
+    if (!_voiceCaptureController.isCapturing) {
+      _lastAutoAnalyzedTranscript = null;
+    }
+    return _voiceCaptureController.toggleListening();
+  }
+
   void _applyVoiceTranscript() {
     final transcript = _voiceCaptureController.draftTranscript;
     if (transcript != null && transcript.isNotEmpty) {
@@ -136,8 +163,12 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
         text: transcript,
         selection: TextSelection.collapsed(offset: transcript.length),
       );
-      if (_voiceCaptureController.isCapturing) {
-        unawaited(_voiceCaptureController.stopListening());
+      if (_voiceCaptureController.status ==
+              VoiceCaptureStatus.transcriptReady &&
+          transcript != _lastAutoAnalyzedTranscript &&
+          !_controller.isSaving) {
+        _lastAutoAnalyzedTranscript = transcript;
+        unawaited(_analyzeTranscript());
       }
     }
     if (mounted) setState(() {});

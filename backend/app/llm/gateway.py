@@ -276,6 +276,18 @@ class SqlAlchemyLedgerGateway:
                 }
                 for item in stock
             ]
+        balance = core.func.coalesce(core.func.sum(core.LedgerEntry.amount), Decimal("0.00"))
+        balances = self.session.execute(
+            core.select(core.Customer.display_name, balance.label("balance"))
+            .outerjoin(core.LedgerEntry, core.LedgerEntry.customer_id == core.Customer.id)
+            .group_by(core.Customer.id, core.Customer.display_name)
+            .order_by(core.Customer.display_name.asc())
+            .limit(200)
+        ).all()
+        context["customer_balances"] = [
+            {"customer_name": name, "balance": str(total or Decimal("0.00"))}
+            for name, total in balances
+        ]
         return context
 
     def commit(self) -> None:

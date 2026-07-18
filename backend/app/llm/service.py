@@ -57,9 +57,9 @@ Interpretation rules:
   invent a missing name, item, quantity, or amount.
 - The supplied recent transactions are context only: use them to disambiguate
   an explicitly named customer or familiar item. The supplied current_stock is
-  read-only context for matching stock names. Never create or duplicate an
-  event from context, and never return a historical event instead of the new
-  utterance.
+  read-only context for matching stock names, and customer_balances are
+  read-only facts. Never create or duplicate an event from context, and never
+  return a historical event instead of the new utterance.
 - Preserve ambiguity: if the speech transcript is incomplete, has conflicting
   amounts, names, or intent, use a low confidence rather than guessing.
 - Customer credit history is append-only. Do not suggest edits, reversals,
