@@ -17,7 +17,7 @@ Future<void> main() async {
       repository: repository,
       additionalDestinations: kiranaVoiceDashboardDestinations(
         repository: repository,
-        voiceCapture: ContinuousVadVoiceCapture(
+        voiceCaptureFactory: () => ContinuousVadVoiceCapture(
           transcriber: KiranaVoiceTranscriptionClient(configuration: configuration),
         ),
       ),

@@ -14,12 +14,12 @@ import 'package:kirana_gpt/ui/adaptive_shell.dart';
 /// ),
 /// ```
 ///
-/// Supplying a [voiceCapture] enables a host-provided, transient native
-/// recognizer. Without one (and always on web), the dashboard safely falls back
-/// to manual transcript entry.
+/// Supplying a [voiceCaptureFactory] creates one native VAD session per
+/// dashboard instance. This prevents a disposed microphone session from being
+/// reused after navigation or a rebuild.
 List<KiranaDestination> kiranaVoiceDashboardDestinations({
   required TranscriptRepository repository,
-  VoiceCapturePort? voiceCapture,
+  VoiceCapturePort Function()? voiceCaptureFactory,
   SpeakerEnrollmentController? speakerEnrollmentController,
 }) {
   return [
@@ -29,7 +29,7 @@ List<KiranaDestination> kiranaVoiceDashboardDestinations({
       selectedIcon: Icons.dashboard,
       builder: (_) => KiranaDashboardPage(
         repository: repository,
-        voiceCapture: voiceCapture,
+        voiceCapture: voiceCaptureFactory?.call(),
       ),
     ),
     KiranaDestination(
