@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:kirana_gpt/app.dart';
 import 'package:kirana_gpt/core/api/api_configuration.dart';
 import 'package:kirana_gpt/data/transcript_repository.dart';
+import 'package:kirana_gpt/features/dashboard/kirana_feature_destinations.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -10,5 +11,12 @@ Future<void> main() async {
     configuration: ApiConfiguration.fromEnvironment(),
   );
 
-  runApp(KiranaApp(repository: repository));
+  runApp(
+    KiranaApp(
+      repository: repository,
+      additionalDestinations: kiranaVoiceDashboardDestinations(
+        repository: repository,
+      ),
+    ),
+  );
 }

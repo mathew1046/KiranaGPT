@@ -24,6 +24,12 @@
 - Why: Gives the product an offline-safe client foundation that follows the shared ingest and privacy contract.
 - Known issues / follow-ups: Set `KIRANA_API_BASE_URL` and `KIRANA_APP_API_KEY` with Dart defines before syncing; voice capture and dashboard destinations remain owned by their dedicated feature branch.
 
+## [2026-07-19 00:35] Flutter voice capture and dashboard feature
+- What changed: Added a transcript-only voice-capture boundary with manual/browser fallback, consent-first speaker-enrollment UI/controller, and compact capture, queue, and confirmation dashboard cards.
+- Files touched: `app/lib/features/voice/`, `app/lib/features/dashboard/`, `CHANGELOG.md`.
+- Why: Adds merge-ready Flutter feature destinations without changing the app shell, dependencies, or raw-audio privacy boundary.
+- Known issues / follow-ups: The host app must register `kiranaVoiceDashboardDestinations(...)` through `KiranaApp.additionalDestinations` and provide production native recognizer/enrollment adapters when available.
+
 ## [2026-07-19 00:10] Secure project baseline
 - What changed: Added repository ignore rules, a safe environment template, and the implementation contract for parallel development.
 - Files touched: `.gitignore`, `.env.example`, `CHANGELOG.md`, `docs/IMPLEMENTATION_CONTRACT.md`.
