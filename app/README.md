@@ -6,14 +6,12 @@ audio is never persisted or uploaded.
 
 ## Run locally
 
-From this directory, provide the backend URL and its app-level bearer key at
-build time. Do not pass `OPENAI_API_KEY` to the app: that secret stays only in
-the backend environment.
+From this directory, provide the backend URL at build time. Do not pass
+`OPENAI_API_KEY` to the app: that secret stays only in the backend environment.
 
 ```sh
 flutter run \
-  --dart-define=KIRANA_API_BASE_URL=http://10.0.2.2:8000 \
-  --dart-define=KIRANA_APP_API_KEY=your-local-app-key
+  --dart-define=KIRANA_API_BASE_URL=http://10.0.2.2:8000
 ```
 
 For a physical Android phone, replace `10.0.2.2` with the LAN address of the
@@ -22,8 +20,7 @@ that permits the web origin with CORS.
 
 ```sh
 flutter build web \
-  --dart-define=KIRANA_API_BASE_URL=https://api.example.com \
-  --dart-define=KIRANA_APP_API_KEY=your-production-app-key
+  --dart-define=KIRANA_API_BASE_URL=https://api.example.com
 ```
 
 The queue storage boundary is intentionally platform-neutral. The included

@@ -4,12 +4,9 @@ from sqlalchemy import select
 from backend.app.models import Customer, SpeakerProfile
 
 
-def test_enroll_speaker_persists_numeric_embedding_only(
-    client: TestClient, auth_headers: dict[str, str]
-) -> None:
+def test_enroll_speaker_persists_numeric_embedding_only(client: TestClient) -> None:
     response = client.post(
         "/v1/enroll-speaker",
-        headers=auth_headers,
         json={
             "customer_name": "Asha Stores",
             "embedding": [0.25] * 8,
@@ -33,12 +30,9 @@ def test_enroll_speaker_persists_numeric_embedding_only(
         assert profile.customer_id == customer.id
 
 
-def test_enroll_speaker_rejects_invalid_schema_and_raw_audio_fields(
-    client: TestClient, auth_headers: dict[str, str]
-) -> None:
+def test_enroll_speaker_rejects_invalid_schema_and_raw_audio_fields(client: TestClient) -> None:
     response = client.post(
         "/v1/enroll-speaker",
-        headers=auth_headers,
         json={
             "customer_name": "Asha Stores",
             "embedding": [0.25] * 7,
@@ -51,11 +45,10 @@ def test_enroll_speaker_rejects_invalid_schema_and_raw_audio_fields(
         assert session.scalar(select(SpeakerProfile)) is None
 
 
-def test_enroll_speaker_requires_bearer_api_key(client: TestClient) -> None:
+def test_enroll_speaker_is_available_without_an_app_key(client: TestClient) -> None:
     response = client.post(
         "/v1/enroll-speaker",
         json={"customer_name": "Asha Stores", "embedding": [0.25] * 8},
     )
 
-    assert response.status_code == 401
-    assert response.headers["www-authenticate"] == "Bearer"
+    assert response.status_code == 201

@@ -8,8 +8,7 @@ import 'package:kirana_gpt/core/api/api_configuration.dart';
 
 /// The phone sends one user-controlled WAV recording over TLS.
 ///
-/// The OpenAI API key remains on the backend; this client uses only the
-/// application bearer token already required by the Kirana API.
+/// The OpenAI API key remains on the backend and is never sent to the phone.
 abstract interface class VoiceTranscriptionGateway {
   Future<String> transcribeWav(Uint8List wavBytes);
 }
@@ -25,11 +24,6 @@ class KiranaVoiceTranscriptionClient implements VoiceTranscriptionGateway {
 
   @override
   Future<String> transcribeWav(Uint8List wavBytes) async {
-    if (!configuration.hasApiKey) {
-      throw const VoiceTranscriptionException(
-        'Configure KIRANA_APP_API_KEY before using voice capture.',
-      );
-    }
     if (wavBytes.isEmpty) {
       throw const VoiceTranscriptionException('No speech was detected.');
     }
@@ -37,7 +31,6 @@ class KiranaVoiceTranscriptionClient implements VoiceTranscriptionGateway {
     final request =
         http.MultipartRequest('POST', configuration.endpoint('/v1/transcribe'))
           ..headers['accept'] = 'application/json'
-          ..headers['authorization'] = 'Bearer ${configuration.apiKey}'
           ..files.add(
             http.MultipartFile.fromBytes(
               'audio',

@@ -14,7 +14,6 @@ from pathlib import Path
 
 
 DEFAULT_DATABASE_URL = "sqlite:///./kirana.db"
-DEFAULT_DEVELOPMENT_API_KEY = "local-development-key"
 
 
 class SettingsError(ValueError):
@@ -31,7 +30,6 @@ class Settings:
     """
 
     database_url: str = DEFAULT_DATABASE_URL
-    app_api_key: str = DEFAULT_DEVELOPMENT_API_KEY
     app_env: str = "development"
     cors_allow_origins: tuple[str, ...] = ()
     openai_api_key: str | None = None
@@ -47,12 +45,10 @@ class Settings:
 
         app_env = os.getenv("APP_ENV", "development").strip().lower() or "development"
         database_url = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL).strip()
-        app_api_key = os.getenv("APP_API_KEY", DEFAULT_DEVELOPMENT_API_KEY).strip()
         openai_api_key = os.getenv("OPENAI_API_KEY") or None
 
         settings = cls(
             database_url=database_url,
-            app_api_key=app_api_key,
             app_env=app_env,
             cors_allow_origins=_parse_csv(os.getenv("CORS_ALLOW_ORIGINS", "")),
             openai_api_key=openai_api_key,
@@ -70,13 +66,6 @@ class Settings:
 
         if not self.database_url:
             raise SettingsError("DATABASE_URL must not be empty")
-        if not self.app_api_key:
-            raise SettingsError("APP_API_KEY must not be empty")
-        if self.app_env in {"production", "prod"} and self.app_api_key in {
-            DEFAULT_DEVELOPMENT_API_KEY,
-            "replace-with-a-local-demo-key",
-        }:
-            raise SettingsError("APP_API_KEY must be a non-default secret in production")
 
 
 def _parse_csv(value: str) -> tuple[str, ...]:

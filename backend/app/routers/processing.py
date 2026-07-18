@@ -1,4 +1,4 @@
-"""Protected HTTP routes for transcript processing, query, and correction.
+"""HTTP routes for transcript processing, query, and correction.
 
 The generic factory accepts injected dependencies so the module has no import
 dependency on backend-core.  ``create_core_processing_router`` is the narrow
@@ -8,10 +8,9 @@ integration hook used after backend-core is available.
 from __future__ import annotations
 
 from collections.abc import Callable
-import secrets
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Request
 
 from ..llm.adapter import OpenAIAdapter, OpenAISettings
 from ..llm.gateway import SqlAlchemyLedgerGateway
@@ -31,51 +30,15 @@ from ..llm.schemas import (
 from ..llm.service import ProcessingService
 
 
-class AuthenticationError(ValueError):
-    """Raised by the pure bearer-token checker without leaking token details."""
-
-
-def verify_bearer_token(authorization: str | None, expected_api_key: str) -> None:
-    """Validate exactly ``Authorization: Bearer <APP_API_KEY>`` safely."""
-
-    scheme, separator, supplied_key = (authorization or "").partition(" ")
-    if (
-        not expected_api_key
-        or not separator
-        or scheme.lower() != "bearer"
-        or not supplied_key
-        or not secrets.compare_digest(supplied_key, expected_api_key)
-    ):
-        raise AuthenticationError("invalid or missing API key")
-
-
-def create_bearer_auth_dependency(expected_api_key: str) -> Callable[..., None]:
-    """Adapt the pure checker to FastAPI without exposing the configured key."""
-
-    def require_api_key(request: Request) -> None:
-        try:
-            verify_bearer_token(request.headers.get("authorization"), expected_api_key)
-        except AuthenticationError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or missing API key",
-                headers={"WWW-Authenticate": "Bearer"},
-            ) from exc
-
-    return require_api_key
-
-
 def create_processing_router(
     *,
     processor_provider: Callable[..., ProcessingService],
-    auth_dependency: Callable[..., Any],
 ) -> APIRouter:
-    """Build all three contract routes around injected auth and processing."""
+    """Build all three contract routes around the processing service."""
 
     router = APIRouter(
         prefix="/v1",
         tags=["processing"],
-        dependencies=[Depends(auth_dependency)],
     )
 
     @router.post("/ingest", response_model=IngestResponse)
@@ -130,11 +93,10 @@ def create_core_processing_router() -> APIRouter:
     """Wire this feature to backend-core lazily, once its modules are present.
 
     Backend-core's application factory should call this once and include the
-    returned router.  The core's existing ``require_api_key`` dependency is
-    reused, so every `/v1` processing endpoint has identical bearer auth.
+    returned router.
     """
 
-    from ..dependencies import get_db, require_api_key
+    from ..dependencies import get_db
 
     def get_processor(
         request: Request,
@@ -151,7 +113,6 @@ def create_core_processing_router() -> APIRouter:
 
     return create_processing_router(
         processor_provider=get_processor,
-        auth_dependency=require_api_key,
     )
 
 

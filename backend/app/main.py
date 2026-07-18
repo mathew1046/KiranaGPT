@@ -6,18 +6,17 @@ from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import AsyncIterator
 
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
 from .config import Settings, get_settings
 from .database import Database
-from .dependencies import require_api_key
 from .inventory.schemas import AnalyticsLedgerEntry, InventorySaleLine
 from .inventory.service import InMemoryInventoryRepository, InventoryService
 from .models import Customer, LedgerEntry
 from .routers.inventory import build_inventory_router
-from .routes.core import protected_router, public_router
+from .routes.core import core_router, public_router
 from .routes.llm import create_llm_router
 from .routers.voice import voice_router
 
@@ -46,16 +45,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_origins=list(resolved_settings.cors_allow_origins),
             allow_credentials=False,
             allow_methods=["GET", "POST", "OPTIONS"],
-            allow_headers=["Accept", "Authorization", "Content-Type"],
+            allow_headers=["Accept", "Content-Type"],
         )
     app.state.settings = resolved_settings
     app.state.database = database
     inventory_service = InventoryService(InMemoryInventoryRepository())
     app.state.inventory_service = inventory_service
 
-    def require_demo_store(_: None = Depends(require_api_key)) -> str:
-        """Scope the MVP's single-store inventory API behind normal auth."""
-
+    def default_store_id() -> str:
         return "default-store"
 
     def load_daily_entries(
@@ -96,11 +93,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return projections
 
     app.include_router(public_router)
-    app.include_router(protected_router)
+    app.include_router(core_router)
     app.include_router(create_llm_router())
     app.include_router(voice_router)
     app.include_router(
-        build_inventory_router(inventory_service, require_demo_store, load_daily_entries)
+        build_inventory_router(inventory_service, default_store_id, load_daily_entries)
     )
     return app
 

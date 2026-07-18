@@ -19,12 +19,7 @@ from backend.app.llm.schemas import (
     QueryStatus,
     ReviewReason,
 )
-from backend.app.routers.processing import (
-    AuthenticationError,
-    create_bearer_auth_dependency,
-    create_processing_router,
-    verify_bearer_token,
-)
+from backend.app.routers.processing import create_processing_router
 
 
 class StubProcessor:
@@ -72,39 +67,15 @@ def build_client() -> TestClient:
     app.include_router(
         create_processing_router(
             processor_provider=lambda: processor,  # type: ignore[arg-type]
-            auth_dependency=create_bearer_auth_dependency("test-api-key"),
         )
     )
     return TestClient(app)
 
 
-def test_bearer_verifier_rejects_missing_wrong_and_non_bearer_tokens() -> None:
-    for value in (None, "Basic test-api-key", "Bearer wrong-key"):
-        try:
-            verify_bearer_token(value, "test-api-key")
-        except AuthenticationError:
-            pass
-        else:
-            raise AssertionError(f"expected token {value!r} to fail")
-
-    verify_bearer_token("Bearer test-api-key", "test-api-key")
-
-
-def test_processing_routes_require_authorization() -> None:
+def test_processing_router_validates_request_schema_without_an_app_key() -> None:
     client = build_client()
 
-    response = client.post("/v1/query", json={"question": "What does Ravi owe?"})
-
-    assert response.status_code == 401
-    assert response.headers["www-authenticate"] == "Bearer"
-    assert response.json()["detail"] == "Invalid or missing API key"
-
-
-def test_processing_router_accepts_valid_bearer_and_validates_request_schema() -> None:
-    client = build_client()
-    headers = {"Authorization": "Bearer test-api-key"}
-
-    success = client.post("/v1/query", json={"question": "What does Ravi owe?"}, headers=headers)
+    success = client.post("/v1/query", json={"question": "What does Ravi owe?"})
     invalid = client.post(
         "/v1/ingest",
         json={
@@ -116,7 +87,6 @@ def test_processing_router_accepts_valid_bearer_and_validates_request_schema() -
                 }
             ]
         },
-        headers=headers,
     )
 
     assert success.status_code == 200
@@ -135,7 +105,6 @@ def test_ingest_response_preserves_client_event_id_for_queue_reconciliation() ->
     response = client.post(
         "/v1/ingest",
         json={"items": [{"client_event_id": event_id, "transcript": "Ravi took rice"}]},
-        headers={"Authorization": "Bearer test-api-key"},
     )
 
     assert response.status_code == 200

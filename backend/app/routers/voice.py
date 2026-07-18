@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..dependencies import require_api_key
 from ..llm.adapter import OpenAISettings
 from ..llm.transcription import OpenAIAudioTranscriptionService
 
@@ -30,7 +29,6 @@ class TranscriptionResponse(BaseModel):
 voice_router = APIRouter(
     prefix="/v1",
     tags=["voice"],
-    dependencies=[Depends(require_api_key)],
 )
 
 

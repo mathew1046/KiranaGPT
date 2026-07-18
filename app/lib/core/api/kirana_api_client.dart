@@ -9,7 +9,7 @@ abstract interface class TranscriptIngestGateway {
   Future<IngestResponse> ingest(IngestRequest request);
 }
 
-/// Small, injectable client for the protected KiranaGPT HTTP API.
+/// Small, injectable client for the KiranaGPT HTTP API.
 ///
 /// It owns only transport and serialization. Domain code decides how a server
 /// result changes local queue state.
@@ -38,10 +38,6 @@ class KiranaApiClient implements TranscriptIngestGateway {
     String path,
     Map<String, Object?> payload,
   ) async {
-    if (!configuration.hasApiKey) {
-      throw const MissingApiKeyException();
-    }
-
     try {
       final response = await _httpClient
           .post(
@@ -49,7 +45,6 @@ class KiranaApiClient implements TranscriptIngestGateway {
             headers: {
               'accept': 'application/json',
               'content-type': 'application/json; charset=utf-8',
-              'authorization': 'Bearer ${configuration.apiKey}',
             },
             body: jsonEncode(payload),
           )
@@ -65,8 +60,6 @@ class KiranaApiClient implements TranscriptIngestGateway {
       }
 
       return decoded.map((key, value) => MapEntry(key.toString(), value));
-    } on MissingApiKeyException {
-      rethrow;
     } on ApiHttpException {
       rethrow;
     } on FormatException {
@@ -88,11 +81,6 @@ sealed class KiranaApiException implements Exception {
 
   @override
   String toString() => message;
-}
-
-class MissingApiKeyException extends KiranaApiException {
-  const MissingApiKeyException()
-    : super('Configure KIRANA_APP_API_KEY before syncing.');
 }
 
 class ApiUnavailableException extends KiranaApiException {

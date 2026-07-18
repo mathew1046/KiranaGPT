@@ -16,12 +16,10 @@ void main() {
     await tester.pumpWidget(KiranaApp(repository: repository));
     await tester.pumpAndSettle();
 
-    expect(find.text('Add an approved ledger update'), findsOneWidget);
+    expect(find.text('Manual update'), findsOneWidget);
     expect(find.byKey(const Key('manual-transcript-field')), findsOneWidget);
     expect(
-      find.text(
-        'Only text is saved locally. Audio is never stored or uploaded.',
-      ),
+      find.text('Record or type one update, then queue it.'),
       findsOneWidget,
     );
   });

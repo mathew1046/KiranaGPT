@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
-from ..dependencies import get_db, require_api_key
+from ..dependencies import get_db
 from ..models import Customer, SpeakerProfile
 from ..schemas import (
     CustomerLedgerResponse,
@@ -21,7 +21,7 @@ from ..services.ledger import get_customer_ledger
 
 
 public_router = APIRouter(tags=["system"])
-protected_router = APIRouter(prefix="/v1", tags=["core"], dependencies=[Depends(require_api_key)])
+core_router = APIRouter(prefix="/v1", tags=["core"])
 
 
 @public_router.get("/health", response_model=HealthResponse)
@@ -31,7 +31,7 @@ def health(request: Request) -> HealthResponse:
     return HealthResponse(status="ok", environment=request.app.state.settings.app_env)
 
 
-@protected_router.post(
+@core_router.post(
     "/enroll-speaker",
     response_model=SpeakerEnrollmentResponse,
     status_code=status.HTTP_201_CREATED,
@@ -75,7 +75,7 @@ def enroll_speaker(
     )
 
 
-@protected_router.get("/ledger/{customer_id}", response_model=CustomerLedgerResponse)
+@core_router.get("/ledger/{customer_id}", response_model=CustomerLedgerResponse)
 def read_customer_ledger(
     customer_id: UUID,
     limit: int = Query(default=50, ge=1, le=200),

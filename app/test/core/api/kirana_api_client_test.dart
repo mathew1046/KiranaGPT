@@ -10,12 +10,12 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   group('KiranaApiClient', () {
     test(
-      'serializes text-only ingest payload with bearer authorization',
+      'serializes a text-only ingest payload without app authorization',
       () async {
         final httpClient = MockClient((request) async {
           expect(request.method, 'POST');
           expect(request.url.toString(), 'https://ledger.example/v1/ingest');
-          expect(request.headers['authorization'], 'Bearer demo-backend-key');
+          expect(request.headers.containsKey('authorization'), isFalse);
           expect(request.headers['content-type'], contains('application/json'));
 
           final body = jsonDecode(request.body) as Map<String, dynamic>;
@@ -47,10 +47,7 @@ void main() {
           );
         });
         final api = KiranaApiClient(
-          configuration: ApiConfiguration(
-            baseUri: Uri.parse('https://ledger.example/'),
-            apiKey: 'demo-backend-key',
-          ),
+          configuration: ApiConfiguration(baseUri: Uri.parse('https://ledger.example/')),
           httpClient: httpClient,
         );
 
@@ -71,24 +68,6 @@ void main() {
         expect(response.items.single.status, IngestItemStatus.synced);
         expect(response.items.single.route, IngestRoute.primary);
         expect(response.items.single.ledgerEntryId, 'ledger-9');
-      },
-    );
-
-    test(
-      'does not request a protected endpoint without a backend key',
-      () async {
-        final api = KiranaApiClient(
-          configuration: ApiConfiguration(
-            baseUri: Uri.parse('https://ledger.example'),
-            apiKey: '',
-          ),
-          httpClient: MockClient((_) async => http.Response('', 500)),
-        );
-
-        await expectLater(
-          api.ingest(const IngestRequest(items: [])),
-          throwsA(isA<MissingApiKeyException>()),
-        );
       },
     );
 

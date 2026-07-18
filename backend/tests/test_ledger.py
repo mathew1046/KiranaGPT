@@ -36,12 +36,10 @@ def _seed_customer_ledger(client: TestClient) -> Customer:
         return customer.customer
 
 
-def test_get_ledger_returns_ordered_events_and_signed_balance(
-    client: TestClient, auth_headers: dict[str, str]
-) -> None:
+def test_get_ledger_returns_ordered_events_and_signed_balance(client: TestClient) -> None:
     customer = _seed_customer_ledger(client)
 
-    response = client.get(f"/v1/ledger/{customer.id}", headers=auth_headers)
+    response = client.get(f"/v1/ledger/{customer.id}")
 
     assert response.status_code == 200
     body = response.json()
@@ -53,19 +51,16 @@ def test_get_ledger_returns_ordered_events_and_signed_balance(
     assert "source_transcript" not in body["entries"][0]
 
 
-def test_get_ledger_rejects_malformed_customer_id(
-    client: TestClient, auth_headers: dict[str, str]
-) -> None:
-    response = client.get("/v1/ledger/not-a-uuid", headers=auth_headers)
+def test_get_ledger_rejects_malformed_customer_id(client: TestClient) -> None:
+    response = client.get("/v1/ledger/not-a-uuid")
 
     assert response.status_code == 422
 
 
-def test_get_ledger_requires_bearer_api_key(client: TestClient) -> None:
+def test_get_ledger_is_available_without_an_app_key(client: TestClient) -> None:
     response = client.get("/v1/ledger/00000000-0000-0000-0000-000000000000")
 
-    assert response.status_code == 401
-    assert response.headers["www-authenticate"] == "Bearer"
+    assert response.status_code == 404
 
 
 def test_ledger_rows_cannot_be_updated_or_deleted(client: TestClient) -> None:
