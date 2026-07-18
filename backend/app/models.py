@@ -8,7 +8,7 @@ from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, DateTime, Enum as SqlEnum, ForeignKey, Index, JSON, Numeric, String, Text, event
+from sqlalchemy import CheckConstraint, DateTime, Enum as SqlEnum, ForeignKey, Index, JSON, Numeric, String, Text, UniqueConstraint, event
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 from sqlalchemy.types import Uuid
 
@@ -106,6 +106,26 @@ class LedgerEntry(Base):
         CheckConstraint("amount <> 0", name="ck_ledger_entries_amount_nonzero"),
         CheckConstraint("length(currency) = 3", name="ck_ledger_entries_currency_code"),
         Index("ix_ledger_entries_customer_created", "customer_id", "created_at"),
+    )
+
+
+class InventoryRecord(Base):
+    """Current stock for one named item in the MVP's default shop."""
+
+    __tablename__ = "inventory_records"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    store_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    item_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    unit: Mapped[str] = mapped_column(String(24), nullable=False, default="unit")
+    quantity_on_hand: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False, default=0)
+    low_stock_threshold: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False, default=0)
+    last_price_inr: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("store_id", "normalized_name", name="uq_inventory_store_item"),
     )
 
 

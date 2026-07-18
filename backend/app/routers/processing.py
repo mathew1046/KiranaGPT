@@ -102,7 +102,11 @@ def create_core_processing_router() -> APIRouter:
         request: Request,
         session: Any = Depends(get_db),
     ) -> ProcessingService:
-        gateway = SqlAlchemyLedgerGateway(session)
+        gateway = SqlAlchemyLedgerGateway(
+            session,
+            inventory_service=request.app.state.inventory_service,
+            google_sheets_mirror=request.app.state.google_sheets_mirror,
+        )
         settings = OpenAISettings.from_runtime_settings(request.app.state.settings)
         return ProcessingService(
             OpenAIAdapter(settings),

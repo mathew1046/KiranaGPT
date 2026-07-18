@@ -23,8 +23,8 @@ def test_enroll_speaker_persists_numeric_embedding_only(client: TestClient) -> N
 
     with client.app.state.database.session_factory() as session:
         profile = session.scalar(select(SpeakerProfile))
-        customer = session.scalar(select(Customer))
         assert profile is not None
+        customer = session.get(Customer, profile.customer_id)
         assert customer is not None
         assert profile.embedding == [0.25] * 8
         assert profile.customer_id == customer.id

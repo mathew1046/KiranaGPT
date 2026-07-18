@@ -37,6 +37,8 @@ class Settings:
     openai_extraction_model: str = "gpt-5.5"
     openai_escalation_model: str = "gpt-5.5"
     openai_query_model: str = "gpt-5.5"
+    google_sheets_spreadsheet_id: str | None = None
+    google_service_account_json: str | None = None
     model_dir: Path = Path("../models")
 
     @classmethod
@@ -56,6 +58,8 @@ class Settings:
             openai_extraction_model=os.getenv("OPENAI_EXTRACTION_MODEL", "gpt-5.5").strip(),
             openai_escalation_model=os.getenv("OPENAI_ESCALATION_MODEL", "gpt-5.5").strip(),
             openai_query_model=os.getenv("OPENAI_QUERY_MODEL", "gpt-5.5").strip(),
+            google_sheets_spreadsheet_id=os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID") or None,
+            google_service_account_json=os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON") or None,
             model_dir=Path(os.getenv("MODEL_DIR", "../models")),
         )
         settings.validate()

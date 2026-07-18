@@ -7,6 +7,11 @@ from decimal import Decimal
 from typing import Protocol
 from uuid import uuid4
 
+from sqlalchemy import select
+
+from ..database import Database
+from ..models import InventoryRecord
+
 from .schemas import (
     InventoryAdjustment,
     InventoryItem,
@@ -78,6 +83,80 @@ class InMemoryInventoryRepository:
                 "delta_quantity": delta_quantity,
             }
         )
+
+
+class SqlAlchemyInventoryRepository:
+    """Small SQLite-backed stock repository for the single-shop MVP."""
+
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    def get_by_name(self, store_id: str, item_name: str) -> InventoryItem | None:
+        with self._database.session_factory() as session:
+            record = session.scalar(
+                select(InventoryRecord).where(
+                    InventoryRecord.store_id == store_id,
+                    InventoryRecord.normalized_name == _normalized_name(item_name),
+                )
+            )
+            return _inventory_item(record) if record is not None else None
+
+    def save(self, item: InventoryItem) -> InventoryItem:
+        with self._database.session_factory() as session:
+            record = session.get(InventoryRecord, item.id)
+            if record is None:
+                record = InventoryRecord(
+                    id=item.id,
+                    store_id=item.store_id,
+                    item_name=item.item_name,
+                    normalized_name=_normalized_name(item.item_name),
+                    unit=item.unit,
+                    quantity_on_hand=item.quantity_on_hand,
+                    low_stock_threshold=item.low_stock_threshold,
+                    last_price_inr=item.last_price_inr,
+                )
+                session.add(record)
+            else:
+                record.item_name = item.item_name
+                record.normalized_name = _normalized_name(item.item_name)
+                record.unit = item.unit
+                record.quantity_on_hand = item.quantity_on_hand
+                record.low_stock_threshold = item.low_stock_threshold
+                record.last_price_inr = item.last_price_inr
+            session.commit()
+            session.refresh(record)
+            return _inventory_item(record)
+
+    def list_for_store(self, store_id: str) -> list[InventoryItem]:
+        with self._database.session_factory() as session:
+            records = session.scalars(
+                select(InventoryRecord).where(InventoryRecord.store_id == store_id)
+            ).all()
+            return [_inventory_item(record) for record in records]
+
+    def record_transaction(
+        self,
+        *,
+        store_id: str,
+        item_id: str,
+        ledger_entry_id: str | None,
+        delta_quantity: Decimal,
+    ) -> None:
+        # SQLite inventory state is sufficient for this MVP; the immutable
+        # customer ledger remains the financial audit trail.
+        del store_id, item_id, ledger_entry_id, delta_quantity
+
+
+def _inventory_item(record: InventoryRecord) -> InventoryItem:
+    return InventoryItem(
+        id=record.id,
+        store_id=record.store_id,
+        item_name=record.item_name,
+        unit=record.unit,
+        quantity_on_hand=Decimal(record.quantity_on_hand),
+        low_stock_threshold=Decimal(record.low_stock_threshold),
+        last_price_inr=Decimal(record.last_price_inr) if record.last_price_inr is not None else None,
+    )
 
 
 class InventoryService:
@@ -185,3 +264,23 @@ class InventoryService:
             items=items,
             low_stock_items=[item for item in items if item.is_low_stock],
         )
+
+    def seed_initial_stock(self, store_id: str = "default-store") -> None:
+        """Create the demo shelf once; never overwrite owner updates."""
+
+        for payload in (
+            InventoryRestock(item_name="Matta Rice", quantity=Decimal("80"), unit="kg", low_stock_threshold=Decimal("15"), last_price_inr=Decimal("58")),
+            InventoryRestock(item_name="Ponni Rice", quantity=Decimal("50"), unit="kg", low_stock_threshold=Decimal("10"), last_price_inr=Decimal("64")),
+            InventoryRestock(item_name="Toor Dal", quantity=Decimal("25"), unit="kg", low_stock_threshold=Decimal("5"), last_price_inr=Decimal("140")),
+            InventoryRestock(item_name="Coconut Oil", quantity=Decimal("36"), unit="litre", low_stock_threshold=Decimal("8"), last_price_inr=Decimal("165")),
+            InventoryRestock(item_name="Tea Powder", quantity=Decimal("18"), unit="kg", low_stock_threshold=Decimal("4"), last_price_inr=Decimal("420")),
+            InventoryRestock(item_name="Sugar", quantity=Decimal("40"), unit="kg", low_stock_threshold=Decimal("8"), last_price_inr=Decimal("48")),
+            InventoryRestock(item_name="Banana Chips", quantity=Decimal("20"), unit="packet", low_stock_threshold=Decimal("5"), last_price_inr=Decimal("45")),
+            InventoryRestock(item_name="A4 Notebook", quantity=Decimal("60"), unit="piece", low_stock_threshold=Decimal("12"), last_price_inr=Decimal("48")),
+            InventoryRestock(item_name="Blue Ball Pen", quantity=Decimal("100"), unit="piece", low_stock_threshold=Decimal("20"), last_price_inr=Decimal("10")),
+            InventoryRestock(item_name="Pencil", quantity=Decimal("80"), unit="piece", low_stock_threshold=Decimal("15"), last_price_inr=Decimal("6")),
+            InventoryRestock(item_name="Eraser", quantity=Decimal("50"), unit="piece", low_stock_threshold=Decimal("10"), last_price_inr=Decimal("5")),
+            InventoryRestock(item_name="A4 Paper", quantity=Decimal("15"), unit="ream", low_stock_threshold=Decimal("3"), last_price_inr=Decimal("290")),
+        ):
+            if self._repository.get_by_name(store_id, payload.item_name) is None:
+                self.restock(store_id, payload)

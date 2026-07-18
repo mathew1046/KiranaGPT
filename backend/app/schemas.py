@@ -73,3 +73,9 @@ class CustomerLedgerResponse(StrictSchema):
     customer_name: str
     balance: Decimal
     entries: list[LedgerEntryResponse]
+
+
+class CreditSummaryResponse(StrictSchema):
+    customer_id: UUID
+    customer_name: str
+    outstanding_inr: Decimal

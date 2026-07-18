@@ -7,6 +7,7 @@ pydantic==2.13.4
 anyio==4.10.0
 openai==2.46.0
 python-multipart==0.0.20
+google-auth==2.40.3
 
 # Test/runtime HTTP client used by FastAPI's TestClient
 httpx==0.28.1

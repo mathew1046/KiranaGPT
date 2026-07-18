@@ -5,12 +5,14 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..dependencies import get_db
-from ..models import Customer, SpeakerProfile
+from ..models import Customer, LedgerEntry, SpeakerProfile
 from ..schemas import (
     CustomerLedgerResponse,
+    CreditSummaryResponse,
     HealthResponse,
     LedgerEntryResponse,
     SpeakerEnrollmentRequest,
@@ -105,3 +107,25 @@ def read_customer_ledger(
             for entry in ledger.entries
         ],
     )
+
+
+@core_router.get("/credits", response_model=list[CreditSummaryResponse])
+def list_outstanding_credits(session: Session = Depends(get_db)) -> list[CreditSummaryResponse]:
+    """Return customers with a positive amount still owed to the shop."""
+
+    outstanding = func.coalesce(func.sum(LedgerEntry.amount), 0).label("outstanding")
+    rows = session.execute(
+        select(Customer.id, Customer.display_name, outstanding)
+        .outerjoin(LedgerEntry, LedgerEntry.customer_id == Customer.id)
+        .group_by(Customer.id, Customer.display_name)
+        .having(outstanding > 0)
+        .order_by(outstanding.desc(), Customer.display_name.asc())
+    ).all()
+    return [
+        CreditSummaryResponse(
+            customer_id=customer_id,
+            customer_name=name,
+            outstanding_inr=amount,
+        )
+        for customer_id, name, amount in rows
+    ]

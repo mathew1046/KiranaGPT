@@ -18,6 +18,9 @@ from .service import (
     ReviewRequiredError,
 )
 from .schemas import ReviewReason, TranscriptItem
+from ..inventory.schemas import InventorySaleLine
+from ..inventory.service import InventoryService
+from ..services.google_sheets import GoogleSheetsMirror
 
 
 class SqlAlchemyLedgerGateway:
@@ -29,8 +32,18 @@ class SqlAlchemyLedgerGateway:
     of work.
     """
 
-    def __init__(self, session: Any) -> None:
+    def __init__(
+        self,
+        session: Any,
+        *,
+        inventory_service: InventoryService | None = None,
+        google_sheets_mirror: GoogleSheetsMirror | None = None,
+    ) -> None:
         self.session = session
+        self.inventory_service = inventory_service
+        self.google_sheets_mirror = google_sheets_mirror
+        self._pending_inventory_updates: list[tuple[str, str, Any, str | None, Any]] = []
+        self._pending_sheet_entries: list[tuple[Any, str, Any]] = []
 
     def append_entry(self, *, item: TranscriptItem, extraction: LedgerExtraction) -> LedgerAppendResult:
         core = _load_core()
@@ -56,6 +69,23 @@ class SqlAlchemyLedgerGateway:
                     attributes=_item_attributes(extraction),
                 ),
             )
+        if (
+            self.inventory_service is not None
+            and extraction.entry_type.value == "sale"
+            and extraction.item_name is not None
+            and extraction.quantity is not None
+        ):
+            self._pending_inventory_updates.append(
+                (
+                    str(entry.id),
+                    extraction.item_name,
+                    extraction.quantity,
+                    extraction.unit,
+                    extraction.amount,
+                )
+            )
+        if self.google_sheets_mirror is not None:
+            self._pending_sheet_entries.append((entry, customer_match.customer.display_name, extraction))
         return LedgerAppendResult(entry_id=entry.id)
 
     def correction_context(self, *, target_entry_id: Any) -> dict[str, Any] | None:
@@ -186,9 +216,34 @@ class SqlAlchemyLedgerGateway:
 
     def commit(self) -> None:
         self.session.commit()
+        if self.inventory_service is not None:
+            for entry_id, item_name, quantity, unit, amount in self._pending_inventory_updates:
+                self.inventory_service.apply_confirmed_sale(
+                    "default-store",
+                    entry_id,
+                    [
+                        InventorySaleLine(
+                            item_name=item_name,
+                            quantity=quantity,
+                            unit=unit,
+                            price_inr=amount,
+                        )
+                    ],
+                )
+        if self.google_sheets_mirror is not None:
+            for entry, customer_name, extraction in self._pending_sheet_entries:
+                self.google_sheets_mirror.append_ledger_entry(
+                    entry=entry,
+                    customer_name=customer_name,
+                    extraction=extraction,
+                )
+        self._pending_inventory_updates.clear()
+        self._pending_sheet_entries.clear()
 
     def rollback(self) -> None:
         self.session.rollback()
+        self._pending_inventory_updates.clear()
+        self._pending_sheet_entries.clear()
 
 
 def _item_attributes(extraction: LedgerExtraction | Any) -> dict[str, Any]:

@@ -13,12 +13,16 @@ from sqlalchemy import select
 from .config import Settings, get_settings
 from .database import Database
 from .inventory.schemas import AnalyticsLedgerEntry, InventorySaleLine
-from .inventory.service import InMemoryInventoryRepository, InventoryService
+from .inventory.service import InventoryService, SqlAlchemyInventoryRepository
 from .models import Customer, LedgerEntry
 from .routers.inventory import build_inventory_router
 from .routes.core import core_router, public_router
 from .routes.llm import create_llm_router
 from .routers.voice import voice_router
+from .services.google_sheets import GoogleSheetsMirror
+from .services.customers import resolve_customer
+from .services.ledger import LedgerMutation, append_ledger_entry
+from .models import LedgerEntryType
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -30,6 +34,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.database.create_schema()
+        app.state.inventory_service.seed_initial_stock()
+        _seed_demo_credits(app.state.database, app.state.inventory_service)
         yield
         app.state.database.dispose()
 
@@ -49,8 +55,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
     app.state.settings = resolved_settings
     app.state.database = database
-    inventory_service = InventoryService(InMemoryInventoryRepository())
+    inventory_service = InventoryService(SqlAlchemyInventoryRepository(database))
     app.state.inventory_service = inventory_service
+    app.state.google_sheets_mirror = GoogleSheetsMirror(resolved_settings)
 
     def default_store_id() -> str:
         return "default-store"
@@ -103,3 +110,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 app = create_app()
+
+
+def _seed_demo_credits(database: Database, inventory_service: InventoryService) -> None:
+    """Add a couple of idempotent Kerala-shop examples for a fresh install."""
+
+    examples = (
+        ("Anitha", "demo-credit-anitha", Decimal("348"), "Matta Rice", Decimal("6"), "kg"),
+        ("Niyas", "demo-credit-niyas", Decimal("210"), "Banana Chips", Decimal("4"), "packet"),
+    )
+    stock_updates: list[tuple[str, Decimal, str, Decimal, str]] = []
+    with database.session_factory() as session:
+        for customer_name, key, amount, item_name, quantity, unit in examples:
+            existing = session.scalar(select(LedgerEntry).where(LedgerEntry.idempotency_key == key))
+            if existing is not None:
+                continue
+            customer = resolve_customer(session, customer_name).customer
+            append_ledger_entry(
+                session,
+                LedgerMutation(
+                    customer_id=customer.id,
+                    entry_type=LedgerEntryType.SALE,
+                    amount=amount,
+                    description=f"Demo credit: {item_name}",
+                    idempotency_key=key,
+                    attributes={"item_name": item_name, "quantity": str(quantity), "unit": unit},
+                ),
+            )
+            stock_updates.append((item_name, quantity, unit, amount, key))
+        session.commit()
+    for item_name, quantity, unit, amount, key in stock_updates:
+        inventory_service.apply_confirmed_sale(
+            "default-store",
+            key,
+            [InventorySaleLine(item_name=item_name, quantity=quantity, unit=unit, price_inr=amount)],
+        )
