@@ -1,0 +1,35 @@
+# Secrets and machine-specific configuration
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+local.properties
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Flutter / Dart
+.dart_tool/
+.packages
+build/
+coverage/
+android/.gradle/
+android/app/build/
+ios/Pods/
+ios/.symlinks/
+macos/Pods/
+linux/flutter/ephemeral/
+windows/flutter/ephemeral/
+
+# Local model assets are supplied outside version control.
+models/
+
+# Preserve the original source photo locally; application work must not touch it.
+WhatsApp Image 2026-07-18 at 10.58.04 PM.jpeg
