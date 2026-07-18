@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from decimal import Decimal
 from typing import AsyncIterator
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
+from sqlalchemy import select
 
 from .config import Settings, get_settings
 from .database import Database
+from .dependencies import require_api_key
+from .inventory.schemas import AnalyticsLedgerEntry, InventorySaleLine
+from .inventory.service import InMemoryInventoryRepository, InventoryService
+from .models import Customer, LedgerEntry
+from .routers.inventory import build_inventory_router
 from .routes.core import protected_router, public_router
 from .routes.llm import create_llm_router
 
@@ -33,9 +40,57 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = resolved_settings
     app.state.database = database
+    inventory_service = InventoryService(InMemoryInventoryRepository())
+    app.state.inventory_service = inventory_service
+
+    def require_demo_store(_: None = Depends(require_api_key)) -> str:
+        """Scope the MVP's single-store inventory API behind normal auth."""
+
+        return "default-store"
+
+    def load_daily_entries(
+        _store_id: str, start_date: str | None, end_date: str | None
+    ) -> list[AnalyticsLedgerEntry]:
+        """Project immutable ledger rows into the analytics service contract."""
+
+        del start_date, end_date  # Date-range filtering is added with store persistence.
+        with database.session_factory() as session:
+            rows = session.execute(
+                select(LedgerEntry, Customer).join(Customer, Customer.id == LedgerEntry.customer_id)
+            ).all()
+        projections: list[AnalyticsLedgerEntry] = []
+        for entry, customer in rows:
+            attributes = entry.attributes or {}
+            quantity = attributes.get("quantity")
+            line_items = (
+                [
+                    InventorySaleLine(
+                        item_name=str(attributes.get("item_name")),
+                        quantity=Decimal(str(quantity)),
+                        unit=attributes.get("unit"),
+                    )
+                ]
+                if attributes.get("item_name") and quantity is not None
+                else []
+            )
+            projections.append(
+                AnalyticsLedgerEntry(
+                    customer_id=str(customer.id),
+                    customer_name=customer.display_name,
+                    entry_type="credit" if entry.amount >= 0 else "payment",
+                    amount=abs(Decimal(entry.amount)),
+                    items=line_items,
+                    is_reversal=entry.reversal_of_id is not None,
+                )
+            )
+        return projections
+
     app.include_router(public_router)
     app.include_router(protected_router)
     app.include_router(create_llm_router())
+    app.include_router(
+        build_inventory_router(inventory_service, require_demo_store, load_daily_entries)
+    )
     return app
 
 

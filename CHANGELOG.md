@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026-07-19 00:55] Wire feature routers into the application
+- What changed: Registered processing and inventory/analytics routes in the FastAPI application factory, with authenticated single-store MVP inventory state and immutable-ledger analytics projections.
+- Files touched: `backend/app/main.py`, `CHANGELOG.md`.
+- Why: Makes the merged feature modules available to the Android/web client through the documented API contract.
+- Known issues / follow-ups: Inventory persistence and automatic LLM-sale deduction are the next production hardening step; this MVP route keeps state for the running demo process.
+
 ## [2026-07-19 00:48] Backend core scaffold
 - What changed: Added the FastAPI application factory, environment-backed settings, SQLite/PostgreSQL-compatible SQLAlchemy setup, constant-time bearer-key authentication, append-only ledger models/services, conservative local customer matching, speaker-embedding enrollment, health, and customer-ledger read endpoints.
 - Files touched: `backend/`, `CHANGELOG.md`.
