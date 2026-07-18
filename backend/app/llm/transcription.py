@@ -1,8 +1,8 @@
-"""Transient GPT-audio transcription for one user-controlled recording."""
+"""Transient Whisper transcription for one user-controlled recording."""
 
 from __future__ import annotations
 
-import base64
+from io import BytesIO
 import logging
 from typing import Any
 
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class OpenAIAudioTranscriptionService:
-    """Send one in-memory WAV recording to GPT-audio without persisting it."""
+    """Send one in-memory WAV recording to Whisper without persisting it."""
 
     def __init__(self, settings: OpenAISettings, *, client: Any | None = None) -> None:
         self._settings = settings
@@ -26,49 +26,17 @@ class OpenAIAudioTranscriptionService:
         if client is None:
             return None
         try:
-            response = client.chat.completions.create(
+            # The Audio Transcriptions API is purpose-built for Whisper.  Keep
+            # the recording in memory and give the SDK a filename for multipart
+            # upload; neither audio nor the transcript is written to disk here.
+            upload = BytesIO(audio)
+            upload.name = filename
+            response = client.audio.transcriptions.create(
                 model=self._settings.audio_model,
-                modalities=["text", "audio"],
-                audio={"voice": "alloy", "format": "wav"},
-                store=False,
-                messages=[
-                    {
-                        "role": "developer",
-                        "content": (
-                            "Transcribe the spoken shop update exactly in its original language. "
-                            "Return only the transcript: no explanation, labels, or inferred details."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "input_audio",
-                                "input_audio": {
-                                    "data": base64.b64encode(audio).decode("ascii"),
-                                    "format": "wav",
-                                },
-                            }
-                        ],
-                    },
-                ],
+                file=upload,
+                response_format="json",
             )
-            choices = response.get("choices") if isinstance(response, dict) else getattr(response, "choices", None)
-            message = (
-                choices[0].get("message")
-                if isinstance(choices, list) and isinstance(choices[0], dict)
-                else getattr(choices[0], "message", None)
-                if choices
-                else None
-            )
-            text = message.get("content") if isinstance(message, dict) else getattr(message, "content", None)
-            if not text:
-                audio_output = message.get("audio") if isinstance(message, dict) else getattr(message, "audio", None)
-                text = (
-                    audio_output.get("transcript")
-                    if isinstance(audio_output, dict)
-                    else getattr(audio_output, "transcript", None)
-                )
+            text = response.get("text") if isinstance(response, dict) else getattr(response, "text", None)
             return text.strip() if isinstance(text, str) and text.strip() else None
         except Exception as exc:
             # Do not log provider messages: they can include request metadata.

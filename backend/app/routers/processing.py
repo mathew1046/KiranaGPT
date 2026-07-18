@@ -8,7 +8,10 @@ integration hook used after backend-core is available.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Request
 
@@ -18,6 +21,8 @@ from ..llm.schemas import (
     CorrectionRequest,
     CorrectionResponse,
     CorrectionStatus,
+    AnalysisPreviewRequest,
+    AnalysisPreviewResponse,
     IngestItemResult,
     IngestRequest,
     IngestResponse,
@@ -26,8 +31,17 @@ from ..llm.schemas import (
     QueryRequest,
     QueryResponse,
     ReviewReason,
+    TranscriptItem,
 )
 from ..llm.service import ProcessingService
+
+
+@dataclass(frozen=True, slots=True)
+class _PendingAnalysis:
+    item: TranscriptItem
+    extraction: Any
+    route: ProcessingRoute
+    expires_at: datetime
 
 
 def create_processing_router(
@@ -40,6 +54,77 @@ def create_processing_router(
         prefix="/v1",
         tags=["processing"],
     )
+    pending_analyses: dict[UUID, _PendingAnalysis] = {}
+
+    def discard_expired_previews() -> None:
+        now = datetime.now(timezone.utc)
+        for proposal_id, proposal in list(pending_analyses.items()):
+            if proposal.expires_at <= now:
+                del pending_analyses[proposal_id]
+
+    @router.post("/analyze-preview", response_model=AnalysisPreviewResponse)
+    def analyze_preview(
+        payload: AnalysisPreviewRequest,
+        processor: ProcessingService = Depends(processor_provider),
+    ) -> AnalysisPreviewResponse:
+        """Return a GPT proposal without writing stock, credits, or customers."""
+
+        discard_expired_previews()
+        item = TranscriptItem(
+            client_event_id=uuid4(),
+            transcript=payload.transcript,
+            locale=payload.locale,
+        )
+        resolution = processor.preview(item)
+        if not resolution.accepted:
+            return AnalysisPreviewResponse(
+                status="needs_review",
+                route=resolution.route,
+                reason=resolution.reason or ReviewReason.MODEL_UNAVAILABLE,
+            )
+        proposal_id = uuid4()
+        pending_analyses[proposal_id] = _PendingAnalysis(
+            item=item,
+            extraction=resolution.value,
+            route=resolution.route,
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=20),
+        )
+        return AnalysisPreviewResponse(
+            status="ready",
+            route=resolution.route,
+            proposal_id=proposal_id,
+            proposal=resolution.value,
+        )
+
+    @router.post("/analyze-preview/{proposal_id}/approve", response_model=IngestItemResult)
+    def approve_analysis_preview(
+        proposal_id: UUID,
+        processor: ProcessingService = Depends(processor_provider),
+    ) -> IngestItemResult:
+        """Persist exactly the proposal the owner just reviewed and approved."""
+
+        discard_expired_previews()
+        pending = pending_analyses.get(proposal_id)
+        if pending is None:
+            return IngestItemResult(
+                client_event_id=proposal_id,
+                status=IngestStatus.NEEDS_REVIEW,
+                route=ProcessingRoute.OFFLINE,
+                reason=ReviewReason.TARGET_NOT_FOUND,
+            )
+        result = processor.approve_preview(
+            item=pending.item,
+            extraction=pending.extraction,
+            route=pending.route,
+        )
+        if result.status is IngestStatus.SYNCED:
+            try:
+                processor.commit()
+            except Exception:
+                processor.rollback()
+                return _ingest_commit_failure(result)
+            del pending_analyses[proposal_id]
+        return result
 
     @router.post("/ingest", response_model=IngestResponse)
     def ingest(

@@ -4,16 +4,24 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:kirana_gpt/core/api/api_configuration.dart';
 import 'package:kirana_gpt/core/api/ingest_models.dart';
+import 'package:kirana_gpt/core/api/manual_analysis_models.dart';
 
 abstract interface class TranscriptIngestGateway {
   Future<IngestResponse> ingest(IngestRequest request);
+}
+
+abstract interface class ManualAnalysisGateway {
+  Future<ManualAnalysisProposal> previewManualAnalysis(String transcript);
+
+  Future<IngestItemResult> approveManualAnalysis(String proposalId);
 }
 
 /// Small, injectable client for the KiranaGPT HTTP API.
 ///
 /// It owns only transport and serialization. Domain code decides how a server
 /// result changes local queue state.
-class KiranaApiClient implements TranscriptIngestGateway {
+class KiranaApiClient
+    implements TranscriptIngestGateway, ManualAnalysisGateway {
   KiranaApiClient({
     required this.configuration,
     http.Client? httpClient,
@@ -29,6 +37,34 @@ class KiranaApiClient implements TranscriptIngestGateway {
     try {
       final response = await _postJson('/v1/ingest', request.toJson());
       return IngestResponse.fromJson(response);
+    } on FormatException {
+      throw const ApiResponseFormatException();
+    }
+  }
+
+  @override
+  Future<ManualAnalysisProposal> previewManualAnalysis(
+    String transcript,
+  ) async {
+    try {
+      final response = await _postJson('/v1/analyze-preview', {
+        'transcript': transcript.trim(),
+        'locale': 'en-IN',
+      });
+      return ManualAnalysisProposal.fromJson(response);
+    } on FormatException {
+      throw const ApiResponseFormatException();
+    }
+  }
+
+  @override
+  Future<IngestItemResult> approveManualAnalysis(String proposalId) async {
+    try {
+      final response = await _postJson(
+        '/v1/analyze-preview/$proposalId/approve',
+        const {},
+      );
+      return IngestItemResult.fromJson(response);
     } on FormatException {
       throw const ApiResponseFormatException();
     }

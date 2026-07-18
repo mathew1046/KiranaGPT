@@ -1,4 +1,6 @@
 import 'package:flutter/foundation.dart';
+import 'package:kirana_gpt/core/api/ingest_models.dart';
+import 'package:kirana_gpt/core/api/manual_analysis_models.dart';
 import 'package:kirana_gpt/core/queue/transcript_queue.dart';
 import 'package:kirana_gpt/data/transcript_repository.dart';
 
@@ -13,12 +15,16 @@ class ManualEntryController extends ChangeNotifier {
   bool _isLoading = false;
   bool _isSaving = false;
   bool _isSyncing = false;
+  bool _isApproving = false;
+  ManualAnalysisProposal? _proposal;
 
   List<QueuedTranscript> get items => List.unmodifiable(_items);
   String? get message => _message;
   bool get isLoading => _isLoading;
   bool get isSaving => _isSaving;
   bool get isSyncing => _isSyncing;
+  bool get isApproving => _isApproving;
+  ManualAnalysisProposal? get proposal => _proposal;
 
   Future<void> load() async {
     _isLoading = true;
@@ -55,43 +61,57 @@ class ManualEntryController extends ChangeNotifier {
     }
   }
 
-  /// Sends one approved manual update through the GPT-5.5 backend workflow.
-  ///
-  /// The repository first writes the transcript to the local queue, so a
-  /// temporary network failure never loses a recorded update. Successful sync
-  /// means the backend validated the model JSON and persisted the operation.
+  /// Ask GPT-5.5 for a reviewable operation without changing shop data.
   Future<bool> analyzeTranscript(String transcript) async {
     _isSaving = true;
-    _isSyncing = true;
     _message = null;
+    _proposal = null;
     notifyListeners();
     try {
-      final queued = await _repository.addManualTranscript(transcript);
-      final result = await _repository.syncPending();
-      _items = await _repository.loadQueue();
-      final updated = _items.where(
-        (item) => item.clientEventId == queued.clientEventId,
-      );
-      final state = updated.isEmpty ? null : updated.first.syncState;
-      if (state == TranscriptSyncState.synced) {
-        _message = 'Update analyzed by GPT-5.5 and saved.';
-        return true;
-      }
-      _message = result.message ?? _syncMessage(result);
-      return false;
+      _proposal = await _repository.previewManualAnalysis(transcript);
+      _message = 'Review the proposed update, then approve it to save.';
+      return true;
     } on ArgumentError {
       _message = 'Enter an update before asking the assistant to analyze it.';
       return false;
     } catch (_) {
-      _message =
-          'Analysis could not finish. The transcript stays queued safely.';
-      _items = await _repository.loadQueue();
+      _message = 'Analysis could not finish. The recording text is still here.';
       return false;
     } finally {
       _isSaving = false;
-      _isSyncing = false;
       notifyListeners();
     }
+  }
+
+  Future<bool> approveProposal() async {
+    final proposal = _proposal;
+    if (proposal == null || _isApproving) return false;
+    _isApproving = true;
+    _message = null;
+    notifyListeners();
+    try {
+      final result = await _repository.approveManualAnalysis(proposal.id);
+      if (result.status == IngestItemStatus.synced ||
+          result.status == IngestItemStatus.duplicate) {
+        _proposal = null;
+        _message = 'Approved update saved to the shop records.';
+        return true;
+      }
+      _message = 'The proposal could not be saved. Please analyze it again.';
+      return false;
+    } catch (_) {
+      _message = 'Approval could not reach the backend. Nothing was changed.';
+      return false;
+    } finally {
+      _isApproving = false;
+      notifyListeners();
+    }
+  }
+
+  void discardProposal() {
+    _proposal = null;
+    _message = 'Proposal discarded. No shop records were changed.';
+    notifyListeners();
   }
 
   Future<void> sync() async {

@@ -1,0 +1,50 @@
+class ManualAnalysisProposal {
+  const ManualAnalysisProposal({
+    required this.id,
+    required this.operation,
+    required this.entryType,
+    required this.customerName,
+    required this.amount,
+    required this.description,
+    required this.itemName,
+    required this.quantity,
+    required this.unit,
+    required this.confidence,
+  });
+
+  factory ManualAnalysisProposal.fromJson(Map<String, dynamic> json) {
+    final proposal = json['proposal'];
+    final proposalId = json['proposal_id'];
+    if (json['status'] != 'ready' ||
+        proposal is! Map ||
+        proposalId is! String) {
+      throw const FormatException('The assistant could not prepare a review.');
+    }
+    final values = proposal.map(
+      (key, value) => MapEntry(key.toString(), value),
+    );
+    return ManualAnalysisProposal(
+      id: proposalId,
+      operation: values['operation']?.toString() ?? 'unknown',
+      entryType: values['entry_type']?.toString(),
+      customerName: values['customer_name']?.toString(),
+      amount: values['amount']?.toString(),
+      description: values['description']?.toString(),
+      itemName: values['item_name']?.toString(),
+      quantity: values['quantity']?.toString(),
+      unit: values['unit']?.toString(),
+      confidence: (values['confidence'] as num?)?.toDouble() ?? 0,
+    );
+  }
+
+  final String id;
+  final String operation;
+  final String? entryType;
+  final String? customerName;
+  final String? amount;
+  final String? description;
+  final String? itemName;
+  final String? quantity;
+  final String? unit;
+  final double confidence;
+}

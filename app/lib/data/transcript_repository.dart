@@ -1,6 +1,7 @@
 import 'package:kirana_gpt/core/api/api_configuration.dart';
 import 'package:kirana_gpt/core/api/ingest_models.dart';
 import 'package:kirana_gpt/core/api/kirana_api_client.dart';
+import 'package:kirana_gpt/core/api/manual_analysis_models.dart';
 import 'package:kirana_gpt/core/queue/transcript_queue.dart';
 
 class TranscriptRepository {
@@ -10,7 +11,10 @@ class TranscriptRepository {
   }) : _syncService = TranscriptSyncService(
          queue: queue,
          ingestGateway: ingestGateway,
-       );
+       ),
+       _manualAnalysisGateway = ingestGateway is ManualAnalysisGateway
+           ? ingestGateway as ManualAnalysisGateway
+           : null;
 
   factory TranscriptRepository.forTesting({
     required TranscriptQueue queue,
@@ -32,6 +36,7 @@ class TranscriptRepository {
 
   final TranscriptQueue queue;
   final TranscriptSyncService _syncService;
+  final ManualAnalysisGateway? _manualAnalysisGateway;
 
   Future<List<QueuedTranscript>> loadQueue() => queue.list();
 
@@ -44,6 +49,22 @@ class TranscriptRepository {
   Future<void> retryNeedsReview() => queue.retryNeedsReview();
 
   Future<void> removeSynced() => queue.removeSynced();
+
+  Future<ManualAnalysisProposal> previewManualAnalysis(String transcript) {
+    final gateway = _manualAnalysisGateway;
+    if (gateway == null) {
+      throw const ApiUnavailableException();
+    }
+    return gateway.previewManualAnalysis(transcript);
+  }
+
+  Future<IngestItemResult> approveManualAnalysis(String proposalId) {
+    final gateway = _manualAnalysisGateway;
+    if (gateway == null) {
+      throw const ApiUnavailableException();
+    }
+    return gateway.approveManualAnalysis(proposalId);
+  }
 }
 
 class TranscriptSyncService {

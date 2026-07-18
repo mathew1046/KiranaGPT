@@ -65,9 +65,18 @@ Interpretation rules:
 - Customer credit history is append-only. Do not suggest edits, reversals,
   balances, or more than one operation. Respect the locale and treat all names
   as user-provided text.
+- Your JSON ``operation`` MUST be exactly one of: ``credit_sale``,
+  ``credit_payment``, ``stock_restock``, ``stock_set``, or ``stock_remove``.
+  Credit operations require ``entry_type``, ``customer_name``, and positive
+  ``amount``. Stock restock/set operations require ``item_name``, positive
+  ``quantity``, and ``unit``. Stock removal requires ``item_name``.
+- Include every schema field. Use JSON null for fields that do not apply; for
+  stock operations ledger fields must be null. Do not put JSON inside a string.
 
-Return only an object matching the JSON Schema. No prose, markdown, or fields
-outside that schema."""
+Return only one object matching the JSON Schema: no prose, markdown, or fields
+outside that schema. This JSON is the exact proposed CRUD operation that will
+be shown to the owner and, only after approval, used by the backend to update
+SQLite."""
 
 CORRECTION_EXTRACTION_INSTRUCTIONS = """Interpret a shopkeeper's correction for the referenced ledger event.
 Return cancel only when the event should be fully reversed. Return amend only
@@ -185,6 +194,71 @@ class ProcessingService:
         results = [self._ingest_item(item) for item in request.items]
         return IngestResponse(items=results)
 
+    def preview(self, item: TranscriptItem) -> ModelResolution[LedgerExtraction]:
+        """Run GPT-5.5 without persisting a proposed shop operation."""
+
+        return self._resolve(
+            primary_role=ModelRole.EXTRACTION,
+            output_model=LedgerExtraction,
+            instructions=LEDGER_EXTRACTION_INSTRUCTIONS,
+            payload={
+                "role": "Kirana shop voice operations agent",
+                "transcript": item.transcript,
+                "captured_at": item.captured_at,
+                "speaker_id": item.speaker_id,
+                "locale": item.locale,
+                "recent_transactions": self._recent_transactions(),
+            },
+        )
+
+    def approve_preview(
+        self,
+        *,
+        item: TranscriptItem,
+        extraction: LedgerExtraction,
+        route: ProcessingRoute,
+    ) -> IngestItemResult:
+        """Persist a previously reviewed, validated GPT proposal."""
+
+        if self.ledger_gateway is None:
+            return self._ingest_needs_review(
+                item,
+                route,
+                ReviewReason.PERSISTENCE_UNAVAILABLE,
+            )
+        try:
+            if extraction.operation in {
+                ShopCommandType.STOCK_RESTOCK,
+                ShopCommandType.STOCK_SET,
+                ShopCommandType.STOCK_REMOVE,
+            }:
+                stock_result = self.ledger_gateway.apply_stock_command(extraction=extraction)
+                return IngestItemResult(
+                    client_event_id=item.client_event_id,
+                    status=IngestStatus.SYNCED,
+                    route=route,
+                    inventory_item_id=stock_result.item_id,
+                )
+            persisted = self.ledger_gateway.append_entry(item=item, extraction=extraction)
+        except ReviewRequiredError as exc:
+            return self._ingest_needs_review(item, route, exc.reason)
+        except Exception:
+            return self._ingest_needs_review(item, route, ReviewReason.PERSISTENCE_UNAVAILABLE)
+
+        if persisted.duplicate:
+            return IngestItemResult(
+                client_event_id=item.client_event_id,
+                status=IngestStatus.DUPLICATE,
+                route=route,
+                ledger_entry_id=persisted.entry_id,
+            )
+        return IngestItemResult(
+            client_event_id=item.client_event_id,
+            status=IngestStatus.SYNCED,
+            route=route,
+            ledger_entry_id=persisted.entry_id,
+        )
+
     def query(self, request: QueryRequest) -> QueryResponse:
         """Answer only when deterministic ledger facts and confidence are present."""
 
@@ -280,63 +354,13 @@ class ProcessingService:
             rollback()
 
     def _ingest_item(self, item: TranscriptItem) -> IngestItemResult:
-        resolution = self._resolve(
-            primary_role=ModelRole.EXTRACTION,
-            output_model=LedgerExtraction,
-            instructions=LEDGER_EXTRACTION_INSTRUCTIONS,
-            payload={
-                "role": "Kirana shop ledger clerk",
-                "transcript": item.transcript,
-                "captured_at": item.captured_at,
-                "speaker_id": item.speaker_id,
-                "locale": item.locale,
-                "recent_transactions": self._recent_transactions(),
-            },
-        )
+        resolution = self.preview(item)
         if not resolution.accepted:
             return self._ingest_needs_review(item, resolution.route, resolution.reason)
-        if self.ledger_gateway is None:
-            return self._ingest_needs_review(
-                item,
-                resolution.route,
-                ReviewReason.PERSISTENCE_UNAVAILABLE,
-            )
-
-        try:
-            if resolution.value.operation in {
-                ShopCommandType.STOCK_RESTOCK,
-                ShopCommandType.STOCK_SET,
-                ShopCommandType.STOCK_REMOVE,
-            }:
-                stock_result = self.ledger_gateway.apply_stock_command(extraction=resolution.value)
-                return IngestItemResult(
-                    client_event_id=item.client_event_id,
-                    status=IngestStatus.SYNCED,
-                    route=resolution.route,
-                    inventory_item_id=stock_result.item_id,
-                )
-            persisted = self.ledger_gateway.append_entry(item=item, extraction=resolution.value)
-        except ReviewRequiredError as exc:
-            return self._ingest_needs_review(item, resolution.route, exc.reason)
-        except Exception:
-            return self._ingest_needs_review(
-                item,
-                resolution.route,
-                ReviewReason.PERSISTENCE_UNAVAILABLE,
-            )
-
-        if persisted.duplicate:
-            return IngestItemResult(
-                client_event_id=item.client_event_id,
-                status=IngestStatus.DUPLICATE,
-                route=resolution.route,
-                ledger_entry_id=persisted.entry_id,
-            )
-        return IngestItemResult(
-            client_event_id=item.client_event_id,
-            status=IngestStatus.SYNCED,
+        return self.approve_preview(
+            item=item,
+            extraction=resolution.value,
             route=resolution.route,
-            ledger_entry_id=persisted.entry_id,
         )
 
     def _resolve(

@@ -97,6 +97,33 @@ class IngestRequest(StrictSchema):
     items: list[TranscriptItem] = Field(min_length=1, max_length=50)
 
 
+class AnalysisPreviewRequest(StrictSchema):
+    """One manually reviewed transcript, before it can change shop data."""
+
+    transcript: str = Field(min_length=1, max_length=4_000)
+    locale: str = Field(default="en-IN", min_length=2, max_length=16)
+
+
+class AnalysisPreviewResponse(StrictSchema):
+    """A GPT proposal kept pending until the owner explicitly approves it."""
+
+    status: Literal["ready", "needs_review"]
+    route: ProcessingRoute
+    proposal_id: UUID | None = None
+    proposal: LedgerExtraction | None = None
+    reason: ReviewReason | None = None
+
+    @model_validator(mode="after")
+    def validate_preview_shape(self) -> "AnalysisPreviewResponse":
+        if self.status == "ready" and (self.proposal_id is None or self.proposal is None):
+            raise ValueError("ready previews require a proposal")
+        if self.status == "needs_review" and (
+            self.proposal_id is not None or self.proposal is not None
+        ):
+            raise ValueError("review previews cannot include a proposal")
+        return self
+
+
 class LedgerExtraction(StrictSchema):
     """Strict structured output before the voice agent changes shop state.
 

@@ -1,6 +1,5 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
+import 'package:kirana_gpt/core/api/manual_analysis_models.dart';
 import 'package:kirana_gpt/core/api/api_configuration.dart';
 import 'package:kirana_gpt/core/api/voice_transcription_client.dart';
 import 'package:kirana_gpt/data/transcript_repository.dart';
@@ -22,7 +21,6 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
   late final ManualEntryController _controller;
   late final TextEditingController _textController;
   late final VoiceCaptureController _voiceCaptureController;
-  String? _lastAutoAnalyzedTranscript;
 
   @override
   void initState() {
@@ -69,7 +67,7 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
               ),
               const SizedBox(height: 6),
               const Text(
-                'Recording is transcribed, then analyzed and saved automatically.',
+                'Record or type an update, then analyze it for review.',
               ),
               const SizedBox(height: 20),
               TextField(
@@ -89,35 +87,36 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
               const SizedBox(height: 12),
               FilledButton.icon(
                 key: const Key('record-manual-transcript-button'),
-                onPressed: _controller.isSaving ? null : _toggleRecording,
+                onPressed: _controller.isSaving || _controller.isApproving
+                    ? null
+                    : _voiceCaptureController.toggleListening,
                 icon: Icon(isRecording ? Icons.stop : Icons.mic),
-                label: Text(isRecording ? 'Stop and process' : 'Record update'),
-              ),
-              const SizedBox(height: 8),
-              FilledButton(
-                key: const Key('queue-transcript-button'),
-                onPressed: _controller.isSaving ? null : _addTranscript,
-                child: Text(
-                  _controller.isSaving ? 'Saving…' : 'Queue for later',
-                ),
+                label: Text(isRecording ? 'Stop recording' : 'Record update'),
               ),
               OutlinedButton.icon(
                 key: const Key('analyze-manual-transcript-button'),
                 onPressed:
-                    _controller.isSaving || _textController.text.trim().isEmpty
+                    _controller.isSaving ||
+                        _controller.isApproving ||
+                        _textController.text.trim().isEmpty
                     ? null
                     : _analyzeTranscript,
                 icon: const Icon(Icons.auto_awesome),
-                label: const Text('Analyze update'),
-              ),
-              TextButton.icon(
-                key: const Key('sync-queue-button'),
-                onPressed: _controller.isSyncing ? null : _controller.sync,
-                icon: const Icon(Icons.sync),
                 label: Text(
-                  _controller.isSyncing ? 'Syncing…' : 'Sync pending updates',
+                  _controller.isSaving ? 'Analyzing…' : 'Analyze update',
                 ),
               ),
+              if (_controller.proposal case final proposal?) ...[
+                const SizedBox(height: 18),
+                _ReviewCard(
+                  proposal: proposal,
+                  approving: _controller.isApproving,
+                  onDiscard: _controller.isApproving
+                      ? null
+                      : _controller.discardProposal,
+                  onApprove: _controller.isApproving ? null : _approveProposal,
+                ),
+              ],
               if (_voiceCaptureController.message case final voiceMessage?) ...[
                 const SizedBox(height: 12),
                 _Message(message: voiceMessage),
@@ -133,27 +132,16 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
     );
   }
 
-  Future<void> _addTranscript() async {
-    final added = await _controller.addTranscript(_textController.text);
-    if (added && mounted) {
-      _textController.clear();
-      FocusScope.of(context).unfocus();
-    }
-  }
-
   Future<void> _analyzeTranscript() async {
-    final analyzed = await _controller.analyzeTranscript(_textController.text);
-    if (analyzed && mounted) {
+    await _controller.analyzeTranscript(_textController.text);
+  }
+
+  Future<void> _approveProposal() async {
+    final approved = await _controller.approveProposal();
+    if (approved && mounted) {
       _textController.clear();
       FocusScope.of(context).unfocus();
     }
-  }
-
-  Future<void> _toggleRecording() {
-    if (!_voiceCaptureController.isCapturing) {
-      _lastAutoAnalyzedTranscript = null;
-    }
-    return _voiceCaptureController.toggleListening();
   }
 
   void _applyVoiceTranscript() {
@@ -163,19 +151,77 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
         text: transcript,
         selection: TextSelection.collapsed(offset: transcript.length),
       );
-      if (_voiceCaptureController.status ==
-              VoiceCaptureStatus.transcriptReady &&
-          transcript != _lastAutoAnalyzedTranscript &&
-          !_controller.isSaving) {
-        _lastAutoAnalyzedTranscript = transcript;
-        unawaited(_analyzeTranscript());
-      }
     }
     if (mounted) setState(() {});
   }
 
   void _refresh() {
     if (mounted) setState(() {});
+  }
+}
+
+class _ReviewCard extends StatelessWidget {
+  const _ReviewCard({
+    required this.proposal,
+    required this.approving,
+    required this.onDiscard,
+    required this.onApprove,
+  });
+
+  final ManualAnalysisProposal proposal;
+  final bool approving;
+  final VoidCallback? onDiscard;
+  final VoidCallback? onApprove;
+
+  @override
+  Widget build(BuildContext context) {
+    final details = <String>[
+      if (proposal.customerName != null) 'Customer: ${proposal.customerName}',
+      if (proposal.amount != null) 'Amount: ₹${proposal.amount}',
+      if (proposal.itemName != null) 'Item: ${proposal.itemName}',
+      if (proposal.quantity != null)
+        'Quantity: ${proposal.quantity}${proposal.unit == null ? '' : ' ${proposal.unit}'}',
+      if (proposal.description != null) proposal.description!,
+    ];
+    return Card(
+      color: Theme.of(context).colorScheme.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Review AI judgement',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 8),
+            Chip(label: Text(proposal.operation.replaceAll('_', ' '))),
+            ...details.map(
+              (detail) => Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(detail),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text('Confidence: ${(proposal.confidence * 100).round()}%'),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.end,
+              children: [
+                TextButton(onPressed: onDiscard, child: const Text('Discard')),
+                FilledButton.icon(
+                  onPressed: onApprove,
+                  icon: const Icon(Icons.check),
+                  label: Text(approving ? 'Saving…' : 'Approve & save'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

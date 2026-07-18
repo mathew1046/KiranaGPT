@@ -39,7 +39,7 @@ class OpenAISettings:
     """Environment-configured model selection without exposing API secrets."""
 
     api_key: str | None = field(default=None, repr=False)
-    audio_model: str = "gpt-audio-1.5"
+    audio_model: str = "whisper-1"
     extraction_model: str = "gpt-5.5"
     escalation_model: str = "gpt-5.5"
     query_model: str = "gpt-5.5"
@@ -63,7 +63,7 @@ class OpenAISettings:
             attempts = 2
         return cls(
             api_key=(source.get("OPENAI_API_KEY") or "").strip() or None,
-            audio_model=(source.get("OPENAI_AUDIO_MODEL") or "gpt-audio-1.5").strip(),
+            audio_model=(source.get("OPENAI_AUDIO_MODEL") or "whisper-1").strip(),
             extraction_model=(source.get("OPENAI_EXTRACTION_MODEL") or "gpt-5.5").strip(),
             escalation_model=(source.get("OPENAI_ESCALATION_MODEL") or "gpt-5.5").strip(),
             query_model=(source.get("OPENAI_QUERY_MODEL") or "gpt-5.5").strip(),
@@ -76,7 +76,7 @@ class OpenAISettings:
 
         return cls(
             api_key=getattr(settings, "openai_api_key", None),
-            audio_model=getattr(settings, "openai_audio_model", "gpt-audio-1.5"),
+            audio_model=getattr(settings, "openai_audio_model", "whisper-1"),
             extraction_model=getattr(settings, "openai_extraction_model", "gpt-5.5"),
             escalation_model=getattr(settings, "openai_escalation_model", "gpt-5.5"),
             query_model=getattr(settings, "openai_query_model", "gpt-5.5"),
