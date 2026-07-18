@@ -38,6 +38,17 @@ class InventoryRestock(BaseModel):
     last_price_inr: Decimal | None = Field(default=None, ge=0)
 
 
+class InventoryUpdate(BaseModel):
+    """The editable current state of an existing stock item."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    quantity_on_hand: Decimal = Field(ge=0)
+    unit: str = Field(min_length=1, max_length=24)
+    low_stock_threshold: Decimal = Field(ge=0)
+    last_price_inr: Decimal | None = Field(default=None, ge=0)
+
+
 class InventorySaleLine(BaseModel):
     """A confirmed structured sale line that may decrement known inventory."""
 

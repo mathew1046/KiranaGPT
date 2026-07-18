@@ -79,3 +79,17 @@ class CreditSummaryResponse(StrictSchema):
     customer_id: UUID
     customer_name: str
     outstanding_inr: Decimal
+    items_given: list[str] = Field(default_factory=list)
+
+
+class CreditMutation(StrictSchema):
+    """A manual credit sale or customer repayment.
+
+    The spoken workflow supplies the same fields through the structured ledger
+    agent. This compact form keeps the management screen useful when a quick
+    correction is needed.
+    """
+
+    customer_name: str = Field(min_length=1, max_length=160)
+    amount: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+    items_given: str | None = Field(default=None, max_length=500)

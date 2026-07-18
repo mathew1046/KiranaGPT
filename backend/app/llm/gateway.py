@@ -11,14 +11,22 @@ from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
 
-from .schemas import CorrectionAction, CorrectionExtraction, CorrectionRequest, LedgerExtraction, signed_amount
+from .schemas import (
+    CorrectionAction,
+    CorrectionExtraction,
+    CorrectionRequest,
+    LedgerExtraction,
+    ShopCommandType,
+    signed_amount,
+)
 from .service import (
     CorrectionAppendResult,
     LedgerAppendResult,
     ReviewRequiredError,
+    StockCommandResult,
 )
 from .schemas import ReviewReason, TranscriptItem
-from ..inventory.schemas import InventorySaleLine
+from ..inventory.schemas import InventoryRestock, InventorySaleLine, InventoryUpdate
 from ..inventory.service import InventoryService
 from ..services.google_sheets import GoogleSheetsMirror
 
@@ -87,6 +95,51 @@ class SqlAlchemyLedgerGateway:
         if self.google_sheets_mirror is not None:
             self._pending_sheet_entries.append((entry, customer_match.customer.display_name, extraction))
         return LedgerAppendResult(entry_id=entry.id)
+
+    def apply_stock_command(self, *, extraction: LedgerExtraction) -> StockCommandResult:
+        """Apply one model-approved stock operation without touching the ledger."""
+
+        if self.inventory_service is None or extraction.item_name is None:
+            raise ReviewRequiredError(ReviewReason.PERSISTENCE_UNAVAILABLE)
+        store_id = "default-store"
+        if extraction.operation is ShopCommandType.STOCK_RESTOCK:
+            if extraction.quantity is None or extraction.unit is None:
+                raise ReviewRequiredError(ReviewReason.INVALID_MODEL_OUTPUT)
+            item = self.inventory_service.restock(
+                store_id,
+                InventoryRestock(
+                    item_name=extraction.item_name,
+                    quantity=extraction.quantity,
+                    unit=extraction.unit,
+                    last_price_inr=extraction.price_inr,
+                ),
+            )
+            return StockCommandResult(item_id=item.id)
+
+        existing = self.inventory_service.find_item(store_id, extraction.item_name)
+        if existing is None:
+            raise ReviewRequiredError(ReviewReason.TARGET_NOT_FOUND)
+        if extraction.operation is ShopCommandType.STOCK_SET:
+            if extraction.quantity is None or extraction.unit is None:
+                raise ReviewRequiredError(ReviewReason.INVALID_MODEL_OUTPUT)
+            item = self.inventory_service.update_item(
+                store_id,
+                existing.id,
+                InventoryUpdate(
+                    quantity_on_hand=extraction.quantity,
+                    unit=extraction.unit,
+                    low_stock_threshold=existing.low_stock_threshold,
+                    last_price_inr=extraction.price_inr or existing.last_price_inr,
+                ),
+            )
+            if item is None:
+                raise ReviewRequiredError(ReviewReason.TARGET_NOT_FOUND)
+            return StockCommandResult(item_id=item.id)
+        if extraction.operation is ShopCommandType.STOCK_REMOVE:
+            if not self.inventory_service.delete_item(store_id, existing.id):
+                raise ReviewRequiredError(ReviewReason.TARGET_NOT_FOUND)
+            return StockCommandResult(item_id=existing.id)
+        raise ReviewRequiredError(ReviewReason.INVALID_MODEL_OUTPUT)
 
     def correction_context(self, *, target_entry_id: Any) -> dict[str, Any] | None:
         core = _load_core()
@@ -198,7 +251,7 @@ class SqlAlchemyLedgerGateway:
             .order_by(core.LedgerEntry.created_at.desc(), core.LedgerEntry.id.desc())
             .limit(20)
         ).all()
-        return {
+        context = {
             "currency": "INR",
             "entries": [
                 {
@@ -213,6 +266,17 @@ class SqlAlchemyLedgerGateway:
                 for entry, customer in rows
             ],
         }
+        if self.inventory_service is not None:
+            stock = self.inventory_service.list_inventory("default-store").items
+            context["current_stock"] = [
+                {
+                    "item_name": item.item_name,
+                    "quantity_on_hand": str(item.quantity_on_hand),
+                    "unit": item.unit,
+                }
+                for item in stock
+            ]
+        return context
 
     def commit(self) -> None:
         self.session.commit()

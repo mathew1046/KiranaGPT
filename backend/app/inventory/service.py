@@ -18,6 +18,7 @@ from .schemas import (
     InventoryListResponse,
     InventoryRestock,
     InventorySaleLine,
+    InventoryUpdate,
 )
 
 
@@ -28,9 +29,13 @@ def _normalized_name(item_name: str) -> str:
 class InventoryRepository(Protocol):
     def get_by_name(self, store_id: str, item_name: str) -> InventoryItem | None: ...
 
+    def get_by_id(self, store_id: str, item_id: str) -> InventoryItem | None: ...
+
     def save(self, item: InventoryItem) -> InventoryItem: ...
 
     def list_for_store(self, store_id: str) -> list[InventoryItem]: ...
+
+    def delete(self, store_id: str, item_id: str) -> bool: ...
 
     def record_transaction(
         self,
@@ -56,6 +61,12 @@ class InMemoryInventoryRepository:
                 return item.model_copy(deep=True)
         return None
 
+    def get_by_id(self, store_id: str, item_id: str) -> InventoryItem | None:
+        item = self._items.get(item_id)
+        if item is None or item.store_id != store_id:
+            return None
+        return item.model_copy(deep=True)
+
     def save(self, item: InventoryItem) -> InventoryItem:
         self._items[item.id] = item.model_copy(deep=True)
         return item.model_copy(deep=True)
@@ -66,6 +77,13 @@ class InMemoryInventoryRepository:
             for item in self._items.values()
             if item.store_id == store_id
         ]
+
+    def delete(self, store_id: str, item_id: str) -> bool:
+        item = self._items.get(item_id)
+        if item is None or item.store_id != store_id:
+            return False
+        del self._items[item_id]
+        return True
 
     def record_transaction(
         self,
@@ -101,6 +119,13 @@ class SqlAlchemyInventoryRepository:
             )
             return _inventory_item(record) if record is not None else None
 
+    def get_by_id(self, store_id: str, item_id: str) -> InventoryItem | None:
+        with self._database.session_factory() as session:
+            record = session.get(InventoryRecord, item_id)
+            if record is None or record.store_id != store_id:
+                return None
+            return _inventory_item(record)
+
     def save(self, item: InventoryItem) -> InventoryItem:
         with self._database.session_factory() as session:
             record = session.get(InventoryRecord, item.id)
@@ -133,6 +158,15 @@ class SqlAlchemyInventoryRepository:
                 select(InventoryRecord).where(InventoryRecord.store_id == store_id)
             ).all()
             return [_inventory_item(record) for record in records]
+
+    def delete(self, store_id: str, item_id: str) -> bool:
+        with self._database.session_factory() as session:
+            record = session.get(InventoryRecord, item_id)
+            if record is None or record.store_id != store_id:
+                return False
+            session.delete(record)
+            session.commit()
+            return True
 
     def record_transaction(
         self,
@@ -255,6 +289,34 @@ class InventoryService:
                 )
             )
         return adjustments
+
+    def update_item(
+        self,
+        store_id: str,
+        item_id: str,
+        payload: InventoryUpdate,
+    ) -> InventoryItem | None:
+        item = self._repository.get_by_id(store_id, item_id)
+        if item is None:
+            return None
+        return self._repository.save(
+            item.model_copy(
+                update={
+                    "quantity_on_hand": payload.quantity_on_hand,
+                    "unit": payload.unit,
+                    "low_stock_threshold": payload.low_stock_threshold,
+                    "last_price_inr": payload.last_price_inr,
+                }
+            )
+        )
+
+    def delete_item(self, store_id: str, item_id: str) -> bool:
+        return self._repository.delete(store_id, item_id)
+
+    def find_item(self, store_id: str, item_name: str) -> InventoryItem | None:
+        """Return an item by its owner-facing name for a voice command."""
+
+        return self._repository.get_by_name(store_id, item_name)
 
     def list_inventory(self, store_id: str) -> InventoryListResponse:
         items = sorted(

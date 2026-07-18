@@ -3,8 +3,6 @@ import 'package:kirana_gpt/data/transcript_repository.dart';
 import 'package:kirana_gpt/core/api/api_configuration.dart';
 import 'package:kirana_gpt/features/dashboard/dashboard_page.dart';
 import 'package:kirana_gpt/features/shop/stock_credits_page.dart';
-import 'package:kirana_gpt/features/voice/speaker_enrollment_controller.dart';
-import 'package:kirana_gpt/features/voice/speaker_enrollment_page.dart';
 import 'package:kirana_gpt/features/voice/voice_capture.dart';
 import 'package:kirana_gpt/ui/adaptive_shell.dart';
 
@@ -23,7 +21,6 @@ List<KiranaDestination> kiranaVoiceDashboardDestinations({
   required TranscriptRepository repository,
   required ApiConfiguration configuration,
   VoiceCapturePort Function()? voiceCaptureFactory,
-  SpeakerEnrollmentController? speakerEnrollmentController,
 }) {
   return [
     KiranaDestination(
@@ -40,13 +37,6 @@ List<KiranaDestination> kiranaVoiceDashboardDestinations({
         repository: repository,
         voiceCapture: voiceCaptureFactory?.call(),
       ),
-    ),
-    KiranaDestination(
-      label: 'Voice profile',
-      icon: Icons.record_voice_over_outlined,
-      selectedIcon: Icons.record_voice_over,
-      builder: (_) =>
-          SpeakerEnrollmentPage(controller: speakerEnrollmentController),
     ),
   ];
 }

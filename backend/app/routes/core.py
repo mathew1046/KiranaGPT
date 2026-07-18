@@ -9,8 +9,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..dependencies import get_db
-from ..models import Customer, LedgerEntry, SpeakerProfile
+from ..models import Customer, LedgerEntry, LedgerEntryType, SpeakerProfile
 from ..schemas import (
+    CreditMutation,
     CustomerLedgerResponse,
     CreditSummaryResponse,
     HealthResponse,
@@ -19,7 +20,7 @@ from ..schemas import (
     SpeakerEnrollmentResponse,
 )
 from ..services.customers import resolve_customer
-from ..services.ledger import get_customer_ledger
+from ..services.ledger import LedgerMutation, append_ledger_entry, get_customer_ledger
 
 
 public_router = APIRouter(tags=["system"])
@@ -121,11 +122,80 @@ def list_outstanding_credits(session: Session = Depends(get_db)) -> list[CreditS
         .having(outstanding > 0)
         .order_by(outstanding.desc(), Customer.display_name.asc())
     ).all()
-    return [
-        CreditSummaryResponse(
-            customer_id=customer_id,
-            customer_name=name,
-            outstanding_inr=amount,
+    return [_credit_summary(session, customer_id, name, amount) for customer_id, name, amount in rows]
+
+
+@core_router.post("/credits", response_model=CreditSummaryResponse, status_code=status.HTTP_201_CREATED)
+def give_credit(
+    payload: CreditMutation,
+    session: Session = Depends(get_db),
+) -> CreditSummaryResponse:
+    """Create a customer as needed and append an itemized credit sale."""
+
+    customer = resolve_customer(session, payload.customer_name).customer
+    append_ledger_entry(
+        session,
+        LedgerMutation(
+            customer_id=customer.id,
+            entry_type=LedgerEntryType.SALE,
+            amount=payload.amount,
+            description=payload.items_given or "Credit given",
+            attributes={"items_given": payload.items_given} if payload.items_given else None,
+        ),
+    )
+    session.commit()
+    return _credit_summary(session, customer.id, customer.display_name, payload.amount)
+
+
+@core_router.post("/credits/payment", response_model=CreditSummaryResponse)
+def record_credit_payment(
+    payload: CreditMutation,
+    session: Session = Depends(get_db),
+) -> CreditSummaryResponse:
+    """Append a repayment; historical credit rows are never edited or deleted."""
+
+    customer = resolve_customer(session, payload.customer_name).customer
+    append_ledger_entry(
+        session,
+        LedgerMutation(
+            customer_id=customer.id,
+            entry_type=LedgerEntryType.PAYMENT,
+            amount=-payload.amount,
+            description=payload.items_given or "Credit repayment",
+        ),
+    )
+    session.commit()
+    balance = session.scalar(
+        select(func.coalesce(func.sum(LedgerEntry.amount), 0)).where(
+            LedgerEntry.customer_id == customer.id
         )
-        for customer_id, name, amount in rows
+    )
+    return _credit_summary(session, customer.id, customer.display_name, balance)
+
+
+def _credit_summary(
+    session: Session,
+    customer_id: UUID,
+    customer_name: str,
+    outstanding: object,
+) -> CreditSummaryResponse:
+    recent_sales = session.scalars(
+        select(LedgerEntry)
+        .where(
+            LedgerEntry.customer_id == customer_id,
+            LedgerEntry.entry_type == LedgerEntryType.SALE,
+        )
+        .order_by(LedgerEntry.created_at.desc(), LedgerEntry.id.desc())
+        .limit(3)
+    ).all()
+    items = [
+        str((entry.attributes or {}).get("items_given") or entry.description)
+        for entry in recent_sales
+        if (entry.attributes or {}).get("items_given") or entry.description
     ]
+    return CreditSummaryResponse(
+        customer_id=customer_id,
+        customer_name=customer_name,
+        outstanding_inr=outstanding,
+        items_given=items,
+    )

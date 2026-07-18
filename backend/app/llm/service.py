@@ -33,6 +33,7 @@ from .schemas import (
     QueryResponse,
     QueryStatus,
     ReviewReason,
+    ShopCommandType,
     TranscriptItem,
 )
 
@@ -40,25 +41,30 @@ from .schemas import (
 TStructured = TypeVar("TStructured", bound=BaseModel)
 
 
-LEDGER_EXTRACTION_INSTRUCTIONS = """You are the careful ledger clerk for a Kirana shop in India.
+LEDGER_EXTRACTION_INSTRUCTIONS = """You are the careful voice operations agent for a Kirana shop in India.
 Your job is to turn ONE freshly transcribed shop-floor utterance into exactly
-one proposed, append-only customer-ledger event. The shopkeeper will review
-the proposal before it is saved.
+one safe shop operation. The shopkeeper will review the result in the app.
 
 Interpretation rules:
-- A SALE means a named customer took goods now and will owe the shop. A PAYMENT
+- CREDIT_SALE means a named customer took goods now and will owe the shop. CREDIT_PAYMENT
   means the named customer paid down an existing balance. Never treat a cash
   sale as a customer-credit SALE unless the utterance clearly says credit/udhaar
   or an existing customer balance is being changed.
-- Amount is an absolute positive INR amount. Never use a prior transaction to
+- STOCK_RESTOCK adds the stated quantity to stock; STOCK_SET replaces a stock
+  quantity; STOCK_REMOVE removes the named stock item. Use stock operations
+  only when they are explicitly requested. Never guess the item or quantity.
+- For a credit command amount is an absolute positive INR amount. Never use a prior transaction to
   invent a missing name, item, quantity, or amount.
 - The supplied recent transactions are context only: use them to disambiguate
-  an explicitly named customer or familiar item, never to create or duplicate
-  an event. Never return a historical event instead of the new utterance.
+  an explicitly named customer or familiar item. The supplied current_stock is
+  read-only context for matching stock names. Never create or duplicate an
+  event from context, and never return a historical event instead of the new
+  utterance.
 - Preserve ambiguity: if the speech transcript is incomplete, has conflicting
   amounts, names, or intent, use a low confidence rather than guessing.
-- The ledger is append-only. Do not suggest edits, reversals, balances, or more
-  than one event. Respect the locale and treat all names as user-provided text.
+- Customer credit history is append-only. Do not suggest edits, reversals,
+  balances, or more than one operation. Respect the locale and treat all names
+  as user-provided text.
 
 Return only an object matching the JSON Schema. No prose, markdown, or fields
 outside that schema."""
@@ -97,6 +103,11 @@ class LedgerAppendResult:
 
 
 @dataclass(frozen=True, slots=True)
+class StockCommandResult:
+    item_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class CorrectionAppendResult:
     correction_entry_id: UUID
     replacement_entry_id: UUID | None = None
@@ -121,6 +132,8 @@ class LedgerGateway(Protocol):
         request: CorrectionRequest,
         correction: CorrectionExtraction,
     ) -> CorrectionAppendResult: ...
+
+    def apply_stock_command(self, *, extraction: LedgerExtraction) -> StockCommandResult: ...
 
 
 class QueryContextProvider(Protocol):
@@ -290,6 +303,18 @@ class ProcessingService:
             )
 
         try:
+            if resolution.value.operation in {
+                ShopCommandType.STOCK_RESTOCK,
+                ShopCommandType.STOCK_SET,
+                ShopCommandType.STOCK_REMOVE,
+            }:
+                stock_result = self.ledger_gateway.apply_stock_command(extraction=resolution.value)
+                return IngestItemResult(
+                    client_event_id=item.client_event_id,
+                    status=IngestStatus.SYNCED,
+                    route=resolution.route,
+                    inventory_item_id=stock_result.item_id,
+                )
             persisted = self.ledger_gateway.append_entry(item=item, extraction=resolution.value)
         except ReviewRequiredError as exc:
             return self._ingest_needs_review(item, resolution.route, exc.reason)

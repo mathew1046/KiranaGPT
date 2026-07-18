@@ -7,7 +7,7 @@ dependency. Keeping it as a factory avoids hidden global state during tests.
 from __future__ import annotations
 
 from collections.abc import Callable
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from ..inventory.analytics import DailyAnalytics, build_daily_analytics
 from ..inventory.schemas import (
@@ -15,6 +15,7 @@ from ..inventory.schemas import (
     InventoryItem,
     InventoryListResponse,
     InventoryRestock,
+    InventoryUpdate,
 )
 from ..inventory.service import InventoryService
 
@@ -38,6 +39,23 @@ def build_inventory_router(
         store_id: str = Depends(require_store_id),
     ) -> InventoryItem:
         return inventory_service.restock(store_id, payload)
+
+    @router.put("/inventory/{item_id}", response_model=InventoryItem)
+    def update_inventory(
+        item_id: str,
+        payload: InventoryUpdate,
+        store_id: str = Depends(require_store_id),
+    ) -> InventoryItem:
+        item = inventory_service.update_item(store_id, item_id, payload)
+        if item is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stock item not found")
+        return item
+
+    @router.delete("/inventory/{item_id}")
+    def delete_inventory(item_id: str, store_id: str = Depends(require_store_id)) -> dict[str, bool]:
+        if not inventory_service.delete_item(store_id, item_id):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stock item not found")
+        return {"deleted": True}
 
     @router.get("/analytics/daily", response_model=DailyAnalytics)
     def get_daily_analytics(

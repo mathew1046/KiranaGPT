@@ -128,6 +128,7 @@ class IngestItemResult {
     required this.status,
     required this.route,
     this.ledgerEntryId,
+    this.inventoryItemId,
     this.reason,
   });
 
@@ -152,6 +153,7 @@ class IngestItemResult {
       status: IngestItemStatus.fromWire(rawStatus),
       route: IngestRoute.fromWire(rawRoute),
       ledgerEntryId: json['ledger_entry_id'] as String?,
+      inventoryItemId: json['inventory_item_id'] as String?,
       reason: json['reason'] as String?,
     );
   }
@@ -160,6 +162,7 @@ class IngestItemResult {
   final IngestItemStatus status;
   final IngestRoute route;
   final String? ledgerEntryId;
+  final String? inventoryItemId;
   final String? reason;
 }
 
