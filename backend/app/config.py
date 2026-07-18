@@ -33,6 +33,7 @@ class Settings:
     database_url: str = DEFAULT_DATABASE_URL
     app_api_key: str = DEFAULT_DEVELOPMENT_API_KEY
     app_env: str = "development"
+    cors_allow_origins: tuple[str, ...] = ()
     openai_api_key: str | None = None
     openai_transcription_model: str = "whisper-1"
     openai_extraction_model: str = "gpt-5.4-mini"
@@ -53,6 +54,7 @@ class Settings:
             database_url=database_url,
             app_api_key=app_api_key,
             app_env=app_env,
+            cors_allow_origins=_parse_csv(os.getenv("CORS_ALLOW_ORIGINS", "")),
             openai_api_key=openai_api_key,
             openai_transcription_model=os.getenv("OPENAI_TRANSCRIPTION_MODEL", "whisper-1").strip(),
             openai_extraction_model=os.getenv("OPENAI_EXTRACTION_MODEL", "gpt-5.4-mini").strip(),
@@ -75,6 +77,12 @@ class Settings:
             "replace-with-a-local-demo-key",
         }:
             raise SettingsError("APP_API_KEY must be a non-default secret in production")
+
+
+def _parse_csv(value: str) -> tuple[str, ...]:
+    """Parse a deployment-friendly allowlist without accepting empty origins."""
+
+    return tuple(origin for origin in (item.strip() for item in value.split(",")) if origin)
 
 
 @lru_cache(maxsize=1)

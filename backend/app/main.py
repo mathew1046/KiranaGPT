@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import AsyncIterator
 
 from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
 from .config import Settings, get_settings
@@ -39,6 +40,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         description="Offline-tolerant Kirana ledger backend. Raw audio is never persisted.",
         lifespan=lifespan,
     )
+    if resolved_settings.cors_allow_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(resolved_settings.cors_allow_origins),
+            allow_credentials=False,
+            allow_methods=["GET", "POST", "OPTIONS"],
+            allow_headers=["Accept", "Authorization", "Content-Type"],
+        )
     app.state.settings = resolved_settings
     app.state.database = database
     inventory_service = InventoryService(InMemoryInventoryRepository())
