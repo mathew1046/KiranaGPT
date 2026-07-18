@@ -7,8 +7,6 @@ dependency. Keeping it as a factory avoids hidden global state during tests.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Annotated
-
 from fastapi import APIRouter, Depends, Query
 
 from ..inventory.analytics import DailyAnalytics, build_daily_analytics
@@ -31,19 +29,19 @@ def build_inventory_router(
     router = APIRouter(prefix="/v1", tags=["inventory"])
 
     @router.get("/inventory", response_model=InventoryListResponse)
-    def get_inventory(store_id: Annotated[str, Depends(require_store_id)]) -> InventoryListResponse:
+    def get_inventory(store_id: str = Depends(require_store_id)) -> InventoryListResponse:
         return inventory_service.list_inventory(store_id)
 
     @router.post("/inventory/restock", response_model=InventoryItem, status_code=201)
     def restock_inventory(
         payload: InventoryRestock,
-        store_id: Annotated[str, Depends(require_store_id)],
+        store_id: str = Depends(require_store_id),
     ) -> InventoryItem:
         return inventory_service.restock(store_id, payload)
 
     @router.get("/analytics/daily", response_model=DailyAnalytics)
     def get_daily_analytics(
-        store_id: Annotated[str, Depends(require_store_id)],
+        store_id: str = Depends(require_store_id),
         start_date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
         end_date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     ) -> DailyAnalytics:
