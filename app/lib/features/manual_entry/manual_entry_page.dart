@@ -21,6 +21,7 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
   late final ManualEntryController _controller;
   late final TextEditingController _textController;
   late final VoiceCaptureController _voiceCaptureController;
+  String? _lastAnalyzedVoiceTranscript;
 
   @override
   void initState() {
@@ -68,7 +69,7 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
               ),
               const SizedBox(height: 6),
               const Text(
-                'Record or type an update, then analyze it for review.',
+                'Record an update to analyze it automatically, or type one to analyze manually.',
               ),
               const SizedBox(height: 20),
               TextField(
@@ -93,7 +94,7 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
                         _controller.isApproving ||
                         isProcessing
                     ? null
-                    : _voiceCaptureController.toggleListening,
+                    : _toggleVoiceCapture,
                 icon: Icon(
                   isProcessing
                       ? Icons.hourglass_top
@@ -119,7 +120,7 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
                     : _analyzeTranscript,
                 icon: const Icon(Icons.auto_awesome),
                 label: Text(
-                  _controller.isSaving ? 'Analyzing…' : 'Analyze update',
+                  _controller.isSaving ? 'Analyzing…' : 'Analyze typed update',
                 ),
               ),
               if (_controller.proposal case final proposal?) ...[
@@ -152,6 +153,15 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
     await _controller.analyzeTranscript(_textController.text);
   }
 
+  Future<void> _toggleVoiceCapture() async {
+    if (!_voiceCaptureController.isCapturing) {
+      // A new recording may legitimately transcribe to the same words as a
+      // prior recording, so it still needs a fresh analysis request.
+      _lastAnalyzedVoiceTranscript = null;
+    }
+    await _voiceCaptureController.toggleListening();
+  }
+
   Future<void> _approveProposal() async {
     final approved = await _controller.approveProposal();
     if (approved && mounted) {
@@ -167,6 +177,13 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
         text: transcript,
         selection: TextSelection.collapsed(offset: transcript.length),
       );
+      if (transcript != _lastAnalyzedVoiceTranscript) {
+        _lastAnalyzedVoiceTranscript = transcript;
+        // The transcript is already visible and remains editable. Send this
+        // one completed recording to analysis immediately so the next screen
+        // is the review/approval step.
+        _analyzeTranscript();
+      }
     }
     if (mounted) setState(() {});
   }

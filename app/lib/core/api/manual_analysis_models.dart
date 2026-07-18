@@ -15,6 +15,9 @@ class ManualAnalysisProposal {
   factory ManualAnalysisProposal.fromJson(Map<String, dynamic> json) {
     final proposal = json['proposal'];
     final proposalId = json['proposal_id'];
+    if (json['status'] == 'needs_review') {
+      throw ManualAnalysisNeedsReviewException(json['reason']?.toString());
+    }
     if (json['status'] != 'ready' ||
         proposal is! Map ||
         proposalId is! String) {
@@ -47,4 +50,25 @@ class ManualAnalysisProposal {
   final String? quantity;
   final String? unit;
   final double confidence;
+}
+
+/// A safe reason returned by the preview endpoint when it cannot make a
+/// reviewable proposal. The original transcript remains only on the device.
+class ManualAnalysisNeedsReviewException implements Exception {
+  const ManualAnalysisNeedsReviewException(String? reason)
+    : reason = reason ?? 'unknown';
+
+  final String reason;
+
+  String get message => switch (reason) {
+    'model_unavailable' =>
+      'Analysis is unavailable right now. Your recording text is still here.',
+    'invalid_model_output' =>
+      'Analysis needs another try. Your recording text is still here.',
+    'confidence_below_threshold' =>
+      'Please clarify the update, then analyze it again.',
+    'escalation_failed' =>
+      'Analysis could not resolve the update. Your recording text is still here.',
+    _ => 'Analysis needs review. Your recording text is still here.',
+  };
 }

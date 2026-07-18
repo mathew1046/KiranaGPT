@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:kirana_gpt/core/api/ingest_models.dart';
+import 'package:kirana_gpt/core/api/kirana_api_client.dart';
 import 'package:kirana_gpt/core/api/manual_analysis_models.dart';
 import 'package:kirana_gpt/core/queue/transcript_queue.dart';
 import 'package:kirana_gpt/data/transcript_repository.dart';
@@ -63,6 +64,11 @@ class ManualEntryController extends ChangeNotifier {
 
   /// Ask GPT-5.5 for a reviewable operation without changing shop data.
   Future<bool> analyzeTranscript(String transcript) async {
+    if (transcript.trim().isEmpty) {
+      _message = 'Enter an update before asking the assistant to analyze it.';
+      notifyListeners();
+      return false;
+    }
     _isSaving = true;
     _message = null;
     _proposal = null;
@@ -71,8 +77,11 @@ class ManualEntryController extends ChangeNotifier {
       _proposal = await _repository.previewManualAnalysis(transcript);
       _message = 'Review the proposed update, then approve it to save.';
       return true;
-    } on ArgumentError {
-      _message = 'Enter an update before asking the assistant to analyze it.';
+    } on ManualAnalysisNeedsReviewException catch (error) {
+      _message = error.message;
+      return false;
+    } on KiranaApiException catch (error) {
+      _message = 'Analysis could not finish: ${error.message}';
       return false;
     } catch (_) {
       _message = 'Analysis could not finish. The recording text is still here.';

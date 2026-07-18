@@ -5,6 +5,7 @@ import 'package:http/testing.dart';
 import 'package:kirana_gpt/core/api/api_configuration.dart';
 import 'package:kirana_gpt/core/api/ingest_models.dart';
 import 'package:kirana_gpt/core/api/kirana_api_client.dart';
+import 'package:kirana_gpt/core/api/manual_analysis_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -47,7 +48,9 @@ void main() {
           );
         });
         final api = KiranaApiClient(
-          configuration: ApiConfiguration(baseUri: Uri.parse('https://ledger.example/')),
+          configuration: ApiConfiguration(
+            baseUri: Uri.parse('https://ledger.example/'),
+          ),
           httpClient: httpClient,
         );
 
@@ -86,5 +89,27 @@ void main() {
       expect(response.items.single.status, IngestItemStatus.needsReview);
       expect(response.items.single.reason, 'Customer name is ambiguous.');
     });
+
+    test(
+      'keeps the preview reason when analysis cannot prepare a proposal',
+      () {
+        expect(
+          () => ManualAnalysisProposal.fromJson({
+            'status': 'needs_review',
+            'route': 'offline',
+            'reason': 'model_unavailable',
+          }),
+          throwsA(
+            isA<ManualAnalysisNeedsReviewException>()
+                .having((error) => error.reason, 'reason', 'model_unavailable')
+                .having(
+                  (error) => error.message,
+                  'message',
+                  contains('unavailable'),
+                ),
+          ),
+        );
+      },
+    );
   });
 }

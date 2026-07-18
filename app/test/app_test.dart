@@ -19,7 +19,9 @@ void main() {
     expect(find.text('Manual update'), findsOneWidget);
     expect(find.byKey(const Key('manual-transcript-field')), findsOneWidget);
     expect(
-      find.text('Record or type one update, then queue it.'),
+      find.text(
+        'Record an update to analyze it automatically, or type one to analyze manually.',
+      ),
       findsOneWidget,
     );
   });
