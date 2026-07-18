@@ -1,7 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:kirana_gpt/core/api/api_configuration.dart';
 import 'package:kirana_gpt/core/queue/transcript_queue.dart';
+import 'package:kirana_gpt/core/api/voice_transcription_client.dart';
 import 'package:kirana_gpt/data/transcript_repository.dart';
 import 'package:kirana_gpt/features/manual_entry/manual_entry_controller.dart';
+import 'package:kirana_gpt/features/voice/voice_capture.dart';
+import 'package:kirana_gpt/features/voice/voice_capture_controller.dart';
 
 /// Web-safe fallback for approving and syncing a transcript without recording.
 class ManualEntryPage extends StatefulWidget {
@@ -16,6 +22,7 @@ class ManualEntryPage extends StatefulWidget {
 class _ManualEntryPageState extends State<ManualEntryPage> {
   late final ManualEntryController _controller;
   late final TextEditingController _textController;
+  late final VoiceCaptureController _voiceCaptureController;
 
   @override
   void initState() {
@@ -24,6 +31,13 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
       ..addListener(_refresh)
       ..load();
     _textController = TextEditingController();
+    _voiceCaptureController = VoiceCaptureController(
+      capturePort: ContinuousVadVoiceCapture(
+        transcriber: KiranaVoiceTranscriptionClient(
+          configuration: ApiConfiguration.fromEnvironment(),
+        ),
+      ),
+    )..addListener(_applyVoiceTranscript);
   }
 
   @override
@@ -32,6 +46,9 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
       ..removeListener(_refresh)
       ..dispose();
     _textController.dispose();
+    _voiceCaptureController
+      ..removeListener(_applyVoiceTranscript)
+      ..dispose();
     super.dispose();
   }
 
@@ -60,8 +77,11 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
                     controller: _textController,
                     isSaving: _controller.isSaving,
                     isSyncing: _controller.isSyncing,
+                    isRecording: _voiceCaptureController.isCapturing,
+                    voiceMessage: _voiceCaptureController.message,
                     onAdd: _addTranscript,
                     onSync: _controller.sync,
+                    onRecord: _recordAudio,
                   ),
                   if (_controller.message case final message?) ...[
                     const SizedBox(height: 16),
@@ -107,6 +127,22 @@ class _ManualEntryPageState extends State<ManualEntryPage> {
     }
   }
 
+  Future<void> _recordAudio() => _voiceCaptureController.toggleListening();
+
+  void _applyVoiceTranscript() {
+    final transcript = _voiceCaptureController.draftTranscript;
+    if (transcript != null && transcript.isNotEmpty) {
+      _textController.value = TextEditingValue(
+        text: transcript,
+        selection: TextSelection.collapsed(offset: transcript.length),
+      );
+      if (_voiceCaptureController.isCapturing) {
+        unawaited(_voiceCaptureController.stopListening());
+      }
+    }
+    if (mounted) setState(() {});
+  }
+
   void _refresh() {
     if (mounted) {
       setState(() {});
@@ -142,15 +178,21 @@ class _ComposerCard extends StatelessWidget {
     required this.controller,
     required this.isSaving,
     required this.isSyncing,
+    required this.isRecording,
+    required this.voiceMessage,
     required this.onAdd,
     required this.onSync,
+    required this.onRecord,
   });
 
   final TextEditingController controller;
   final bool isSaving;
   final bool isSyncing;
+  final bool isRecording;
+  final String? voiceMessage;
   final Future<void> Function() onAdd;
   final Future<void> Function() onSync;
+  final Future<void> Function() onRecord;
 
   @override
   Widget build(BuildContext context) {
@@ -166,7 +208,7 @@ class _ComposerCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             const Text(
-              'Only text is saved locally. Audio is never stored or uploaded.',
+              'Record a short utterance to transcribe it, then review the text before queueing it.',
             ),
             const SizedBox(height: 16),
             TextField(
@@ -184,10 +226,20 @@ class _ComposerCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
+            if (voiceMessage case final message?) ...[
+              Text(message, style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: 8),
+            ],
             Wrap(
               spacing: 12,
               runSpacing: 12,
               children: [
+                OutlinedButton.icon(
+                  key: const Key('record-manual-transcript-button'),
+                  onPressed: isSaving ? null : onRecord,
+                  icon: Icon(isRecording ? Icons.stop_circle_outlined : Icons.mic_none),
+                  label: Text(isRecording ? 'Stop recording' : 'Record and transcribe'),
+                ),
                 FilledButton.icon(
                   key: const Key('queue-transcript-button'),
                   onPressed: isSaving ? null : onAdd,
