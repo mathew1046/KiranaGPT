@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:kirana_gpt/core/api/api_configuration.dart';
 
 /// The phone sends only a short, VAD-delimited WAV segment over TLS.
@@ -44,6 +45,7 @@ class KiranaVoiceTranscriptionClient implements VoiceTranscriptionGateway {
           'audio',
           wavBytes,
           filename: 'utterance.wav',
+          contentType: MediaType('audio', 'wav'),
         ),
       );
 

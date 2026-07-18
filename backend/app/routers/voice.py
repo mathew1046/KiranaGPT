@@ -11,7 +11,14 @@ from ..llm.transcription import OpenAITranscriptionService
 
 
 MAX_AUDIO_BYTES = 10 * 1024 * 1024
-ALLOWED_CONTENT_TYPES = {"audio/wav", "audio/x-wav", "audio/wave"}
+ALLOWED_CONTENT_TYPES = {
+    "audio/wav",
+    "audio/x-wav",
+    "audio/wave",
+    # Flutter's multipart implementation can use this generic fallback even
+    # for a WAV file. The RIFF/WAVE magic bytes are checked below.
+    "application/octet-stream",
+}
 
 
 class TranscriptionResponse(BaseModel):
@@ -44,6 +51,8 @@ async def transcribe_audio(
         await audio.close()
     if not payload or len(payload) > MAX_AUDIO_BYTES:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Audio segment is too large")
+    if payload[:4] != b"RIFF" or payload[8:12] != b"WAVE":
+        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Valid WAV audio required")
 
     service = OpenAITranscriptionService(
         OpenAISettings.from_runtime_settings(request.app.state.settings)
