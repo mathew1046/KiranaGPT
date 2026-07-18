@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import base64
+import logging
 from typing import Any
 
 from .adapter import OpenAISettings
+
+
+logger = logging.getLogger(__name__)
 
 
 class OpenAIAudioTranscriptionService:
@@ -24,7 +28,8 @@ class OpenAIAudioTranscriptionService:
         try:
             response = client.chat.completions.create(
                 model=self._settings.audio_model,
-                modalities=["text"],
+                modalities=["text", "audio"],
+                audio={"voice": "alloy", "format": "wav"},
                 store=False,
                 messages=[
                     {
@@ -49,11 +54,25 @@ class OpenAIAudioTranscriptionService:
                 ],
             )
             choices = response.get("choices") if isinstance(response, dict) else getattr(response, "choices", None)
-            message = choices[0].get("message") if isinstance(choices, list) and isinstance(choices[0], dict) else getattr(choices[0], "message", None) if choices else None
+            message = (
+                choices[0].get("message")
+                if isinstance(choices, list) and isinstance(choices[0], dict)
+                else getattr(choices[0], "message", None)
+                if choices
+                else None
+            )
             text = message.get("content") if isinstance(message, dict) else getattr(message, "content", None)
+            if not text:
+                audio_output = message.get("audio") if isinstance(message, dict) else getattr(message, "audio", None)
+                text = (
+                    audio_output.get("transcript")
+                    if isinstance(audio_output, dict)
+                    else getattr(audio_output, "transcript", None)
+                )
             return text.strip() if isinstance(text, str) and text.strip() else None
-        except Exception:
-            # Provider failures may contain audio/request metadata; never surface it.
+        except Exception as exc:
+            # Do not log provider messages: they can include request metadata.
+            logger.warning("OpenAI audio transcription failed (%s)", type(exc).__name__)
             return None
 
     def _get_client(self) -> Any | None:
