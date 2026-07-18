@@ -6,6 +6,12 @@
 - Why: Provides the secure persistence and API foundation for the ingestion, correction, inventory, analytics, Android, and web feature branches.
 - Known issues / follow-ups: The sandbox blocks AnyIO's threaded FastAPI test transport, so endpoint tests are included but need one normal-host run; raw audio remains intentionally unsupported and is never persisted.
 
+## [2026-07-19 00:48] Validated LLM processing boundary
+- What changed: Added strict transcript/LLM schemas, one bounded confidence router, a `store=False` OpenAI Responses adapter with structured JSON validation/retry and safe offline fallback, plus protected ingest/query/correction route factories.
+- Files touched: `backend/app/llm/`, `backend/app/routers/processing.py`, `backend/app/routes/llm.py`, `tests/test_llm_routing.py`, `tests/test_processing_router.py`, `CHANGELOG.md`.
+- Why: Ensures only validated, high-confidence text extraction can reach append-only ledger operations; malformed, unavailable, or low-confidence inference is returned as `needs_review` without creating a zero-value transaction.
+- Known issues / follow-ups: Backend app factory must include `create_llm_router()` from `backend.app.routes.llm`; runtime OpenAI SDK dependency is pinned by backend-core.
+
 ## [2026-07-19 00:10] Secure project baseline
 - What changed: Added repository ignore rules, a safe environment template, and the implementation contract for parallel development.
 - Files touched: `.gitignore`, `.env.example`, `CHANGELOG.md`, `docs/IMPLEMENTATION_CONTRACT.md`.

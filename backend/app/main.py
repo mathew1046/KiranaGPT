@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from .config import Settings, get_settings
 from .database import Database
 from .routes.core import protected_router, public_router
+from .routes.llm import create_llm_router
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -34,6 +35,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.database = database
     app.include_router(public_router)
     app.include_router(protected_router)
+    app.include_router(create_llm_router())
     return app
 
 

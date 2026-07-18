@@ -1,1 +1,1 @@
-"""Application package for the KiranaGPT API."""
+"""Application modules for the KiranaGPT backend."""
