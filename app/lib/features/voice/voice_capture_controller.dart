@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:kirana_gpt/features/voice/voice_capture.dart';
 
@@ -16,58 +18,72 @@ enum VoiceCaptureStatus {
 /// accidentally through the capture flow.
 class VoiceCaptureController extends ChangeNotifier {
   VoiceCaptureController({VoiceCapturePort? capturePort})
-    : _capturePort = capturePort ?? PrivacySafeVoiceCapture();
+    : _capturePort = capturePort ?? UnavailableVoiceCapture();
 
   final VoiceCapturePort _capturePort;
 
   VoiceCaptureStatus _status = VoiceCaptureStatus.ready;
   String? _draftTranscript;
   String? _message;
-  bool _isCapturing = false;
 
   VoiceCaptureAvailability get availability => _capturePort.availability;
   VoiceCaptureStatus get status => _status;
   String? get draftTranscript => _draftTranscript;
   String? get message => _message;
-  bool get isCapturing => _isCapturing;
+  bool get isCapturing => _capturePort.isListening;
 
-  Future<VoiceCaptureResult> capture() async {
-    if (_isCapturing) {
-      return const VoiceCaptureResult.cancelled(
-        message: 'Voice capture is already in progress.',
-      );
-    }
-
-    _isCapturing = true;
+  /// Starts VAD and leaves it listening until the dashboard is closed or the
+  /// user explicitly stops it. Each detected speech turn is transcribed.
+  Future<VoiceCaptureResult> startListening() async {
     _status = VoiceCaptureStatus.capturing;
     _message = null;
     notifyListeners();
 
     VoiceCaptureResult result;
     try {
-      result = await _capturePort.captureTranscript();
+      result = await _capturePort.startListening(_handleResult);
     } catch (_) {
       result = const VoiceCaptureResult.failed(
-        message:
-            'Voice capture could not finish. Type the approved transcript instead.',
+        message: 'Voice capture could not start. Type the approved transcript instead.',
       );
     }
+    _applyResult(result);
+    return result;
+  }
 
-    _isCapturing = false;
+  Future<VoiceCaptureResult> stopListening() async {
+    final result = await _capturePort.stopListening();
+    _applyResult(result);
+    return result;
+  }
+
+  Future<VoiceCaptureResult> toggleListening() => isCapturing ? stopListening() : startListening();
+
+  void _handleResult(VoiceCaptureResult result) {
+    _applyResult(result);
+  }
+
+  void _applyResult(VoiceCaptureResult result) {
     _message = result.message;
     switch (result.outcome) {
+      case VoiceCaptureOutcome.listening:
+        _status = VoiceCaptureStatus.capturing;
+        break;
       case VoiceCaptureOutcome.transcriptReady:
         _draftTranscript = result.transcript;
         _status = VoiceCaptureStatus.transcriptReady;
+        break;
       case VoiceCaptureOutcome.manualEntryRequired:
         _status = VoiceCaptureStatus.manualEntry;
+        break;
       case VoiceCaptureOutcome.cancelled:
         _status = VoiceCaptureStatus.cancelled;
+        break;
       case VoiceCaptureOutcome.failed:
         _status = VoiceCaptureStatus.failed;
+        break;
     }
     notifyListeners();
-    return result;
   }
 
   /// Accepts a typed fallback transcript; it is not persisted by this class.
@@ -86,5 +102,11 @@ class VoiceCaptureController extends ChangeNotifier {
     _message = null;
     _status = VoiceCaptureStatus.ready;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    unawaited(_capturePort.dispose());
+    super.dispose();
   }
 }

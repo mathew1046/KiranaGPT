@@ -1,28 +1,29 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
+import 'package:kirana_gpt/core/api/voice_transcription_client.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:vad/vad.dart';
 
-/// The only information that crosses the voice-capture boundary is text.
-///
-/// Platform recognizers may use a short-lived audio buffer internally, but they
-/// must discard it before completing [TransientTranscriptRecognizer]. This
-/// package neither receives, stores, uploads, nor serializes raw audio.
-typedef TransientTranscriptRecognizer = Future<String?> Function();
-
-enum VoiceCaptureAvailability { transientRecognizer, manualOnly }
+enum VoiceCaptureAvailability { continuousVad, manualOnly }
 
 enum VoiceCaptureOutcome {
+  listening,
   transcriptReady,
   manualEntryRequired,
   cancelled,
   failed,
 }
 
-/// A capture result intentionally has no audio, path, byte, or recording field.
 class VoiceCaptureResult {
   const VoiceCaptureResult._({
     required this.outcome,
     this.transcript,
     this.message,
   });
+
+  const VoiceCaptureResult.listening()
+    : this._(outcome: VoiceCaptureOutcome.listening);
 
   factory VoiceCaptureResult.transcript(String transcript) {
     final cleanTranscript = transcript.trim();
@@ -36,10 +37,7 @@ class VoiceCaptureResult {
   }
 
   const VoiceCaptureResult.manualEntryRequired({String? message})
-    : this._(
-        outcome: VoiceCaptureOutcome.manualEntryRequired,
-        message: message,
-      );
+    : this._(outcome: VoiceCaptureOutcome.manualEntryRequired, message: message);
 
   const VoiceCaptureResult.cancelled({String? message})
     : this._(outcome: VoiceCaptureOutcome.cancelled, message: message);
@@ -50,71 +48,184 @@ class VoiceCaptureResult {
   final VoiceCaptureOutcome outcome;
   final String? transcript;
   final String? message;
-
-  bool get hasTranscript =>
-      outcome == VoiceCaptureOutcome.transcriptReady &&
-      transcript != null &&
-      transcript!.isNotEmpty;
 }
 
-/// Adapter boundary for an on-device speech recognizer.
-///
-/// The default implementation is deliberately safe on every platform: browser
-/// builds and builds without an injected recognizer request manual text entry.
+typedef VoiceCaptureListener = void Function(VoiceCaptureResult result);
+
+/// A continuous listener: VAD stays active between speech turns until stopped.
 abstract interface class VoiceCapturePort {
   VoiceCaptureAvailability get availability;
+  bool get isListening;
 
-  Future<VoiceCaptureResult> captureTranscript();
+  Future<VoiceCaptureResult> startListening(VoiceCaptureListener onResult);
+  Future<VoiceCaptureResult> stopListening();
+  Future<void> dispose();
 }
 
-/// Privacy-preserving adapter for a native recognizer supplied by the host app.
+/// Browser and unsupported-device fallback; manual entry remains available.
+class UnavailableVoiceCapture implements VoiceCapturePort {
+  @override
+  VoiceCaptureAvailability get availability => VoiceCaptureAvailability.manualOnly;
+
+  @override
+  bool get isListening => false;
+
+  @override
+  Future<VoiceCaptureResult> startListening(VoiceCaptureListener onResult) async =>
+      const VoiceCaptureResult.manualEntryRequired(
+        message: 'Voice capture is not available on this device. Type the transcript instead.',
+      );
+
+  @override
+  Future<VoiceCaptureResult> stopListening() async => const VoiceCaptureResult.cancelled();
+
+  @override
+  Future<void> dispose() async {}
+}
+
+/// On-device Silero VAD followed by server-side Whisper transcription.
 ///
-/// There is no microphone package in this feature. A future Android integration
-/// can inject a recognizer that returns a final transcript after discarding its
-/// transient audio buffer. Web always uses the manual-entry fallback.
-class PrivacySafeVoiceCapture implements VoiceCapturePort {
-  PrivacySafeVoiceCapture({
-    TransientTranscriptRecognizer? recognizer,
-    bool? isWeb,
-  }) : _recognizer = recognizer,
-       _isWeb = isWeb ?? kIsWeb;
+/// Audio segments exist only in memory. They are converted to a short WAV,
+/// posted to the protected backend, then released; they are never stored by
+/// the app or backend.
+class ContinuousVadVoiceCapture implements VoiceCapturePort {
+  ContinuousVadVoiceCapture({required VoiceTranscriptionGateway transcriber})
+    : _transcriber = transcriber;
 
-  final TransientTranscriptRecognizer? _recognizer;
-  final bool _isWeb;
+  final VoiceTranscriptionGateway _transcriber;
+  VadHandler? _vad;
+  StreamSubscription<List<double>>? _speechEndSubscription;
+  StreamSubscription<String>? _errorSubscription;
+  Future<void> _transcriptionTail = Future<void>.value();
+  VoiceCaptureListener? _onResult;
+  bool _isListening = false;
+  bool _isDisposed = false;
 
   @override
-  VoiceCaptureAvailability get availability {
-    if (_isWeb || _recognizer == null) {
-      return VoiceCaptureAvailability.manualOnly;
+  VoiceCaptureAvailability get availability => kIsWeb
+      ? VoiceCaptureAvailability.manualOnly
+      : VoiceCaptureAvailability.continuousVad;
+
+  @override
+  bool get isListening => _isListening;
+
+  @override
+  Future<VoiceCaptureResult> startListening(VoiceCaptureListener onResult) async {
+    if (kIsWeb) {
+      return const VoiceCaptureResult.manualEntryRequired(
+        message: 'Continuous voice capture is available in the Android app only.',
+      );
     }
-    return VoiceCaptureAvailability.transientRecognizer;
-  }
+    if (_isDisposed) {
+      return const VoiceCaptureResult.failed(message: 'Voice capture is no longer available.');
+    }
+    if (_isListening) {
+      return const VoiceCaptureResult.listening();
+    }
 
-  @override
-  Future<VoiceCaptureResult> captureTranscript() async {
-    final recognizer = _recognizer;
-    if (_isWeb || recognizer == null) {
-      return VoiceCaptureResult.manualEntryRequired(
-        message: _isWeb
-            ? 'Voice capture is not available in the browser. Type the approved transcript instead.'
-            : 'Voice capture is not configured on this device. Type the approved transcript instead.',
+    final permission = await Permission.microphone.request();
+    if (!permission.isGranted) {
+      return const VoiceCaptureResult.manualEntryRequired(
+        message: 'Allow microphone access to use continuous voice capture.',
       );
     }
 
     try {
-      final transcript = await recognizer();
-      if (transcript == null || transcript.trim().isEmpty) {
-        return const VoiceCaptureResult.cancelled(
-          message: 'No transcript was captured.',
-        );
-      }
-      return VoiceCaptureResult.transcript(transcript);
+      _onResult = onResult;
+      final vad = _vad ??= VadHandler.create();
+      _speechEndSubscription ??= vad.onSpeechEnd.listen(_queueTranscription);
+      _errorSubscription ??= vad.onError.listen((_) {
+        _onResult?.call(const VoiceCaptureResult.failed(
+          message: 'Voice detection stopped. Start listening again or type the transcript.',
+        ));
+      });
+      await vad.startListening(model: 'v5');
+      _isListening = true;
+      return const VoiceCaptureResult.listening();
     } catch (_) {
-      // Do not expose platform exception details, which can include device data.
       return const VoiceCaptureResult.failed(
-        message:
-            'Voice capture could not finish. Type the approved transcript instead.',
+        message: 'Voice capture could not start. Type the transcript instead.',
       );
     }
   }
+
+  @override
+  Future<VoiceCaptureResult> stopListening() async {
+    if (!_isListening) {
+      return const VoiceCaptureResult.cancelled();
+    }
+    try {
+      await _vad?.stopListening();
+      _isListening = false;
+      return const VoiceCaptureResult.cancelled(message: 'Voice capture stopped.');
+    } catch (_) {
+      _isListening = false;
+      return const VoiceCaptureResult.failed(message: 'Voice capture could not stop cleanly.');
+    }
+  }
+
+  void _queueTranscription(List<double> samples) {
+    if (samples.isEmpty || !_isListening) {
+      return;
+    }
+    // Keep each utterance short even if a user speaks continuously. The VAD
+    // stays live afterwards and will capture the next turn independently.
+    const maxSamples = 16000 * 8;
+    final boundedSamples = samples.length > maxSamples
+        ? samples.sublist(0, maxSamples)
+        : samples;
+    _transcriptionTail = _transcriptionTail.then((_) => _transcribe(boundedSamples));
+  }
+
+  Future<void> _transcribe(List<double> samples) async {
+    try {
+      final transcript = await _transcriber.transcribeWav(_pcm16Wav(samples));
+      _onResult?.call(VoiceCaptureResult.transcript(transcript));
+    } on VoiceTranscriptionException catch (error) {
+      _onResult?.call(VoiceCaptureResult.failed(message: error.message));
+    } catch (_) {
+      _onResult?.call(const VoiceCaptureResult.failed(
+        message: 'Speech transcription could not finish. Try again or type the transcript.',
+      ));
+    }
+  }
+
+  @override
+  Future<void> dispose() async {
+    if (_isDisposed) return;
+    _isDisposed = true;
+    await stopListening();
+    await _speechEndSubscription?.cancel();
+    await _errorSubscription?.cancel();
+    await _vad?.dispose();
+  }
+}
+
+Uint8List _pcm16Wav(List<double> samples, {int sampleRate = 16000}) {
+  final bytes = ByteData(44 + (samples.length * 2));
+  void ascii(int offset, String value) {
+    for (var index = 0; index < value.length; index++) {
+      bytes.setUint8(offset + index, value.codeUnitAt(index));
+    }
+  }
+
+  final dataLength = samples.length * 2;
+  ascii(0, 'RIFF');
+  bytes.setUint32(4, 36 + dataLength, Endian.little);
+  ascii(8, 'WAVE');
+  ascii(12, 'fmt ');
+  bytes.setUint32(16, 16, Endian.little);
+  bytes.setUint16(20, 1, Endian.little);
+  bytes.setUint16(22, 1, Endian.little);
+  bytes.setUint32(24, sampleRate, Endian.little);
+  bytes.setUint32(28, sampleRate * 2, Endian.little);
+  bytes.setUint16(32, 2, Endian.little);
+  bytes.setUint16(34, 16, Endian.little);
+  ascii(36, 'data');
+  bytes.setUint32(40, dataLength, Endian.little);
+  for (var index = 0; index < samples.length; index++) {
+    final sample = samples[index].clamp(-1.0, 1.0);
+    bytes.setInt16(44 + (index * 2), (sample * 32767).round(), Endian.little);
+  }
+  return bytes.buffer.asUint8List();
 }

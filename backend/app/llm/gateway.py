@@ -158,6 +158,32 @@ class SqlAlchemyLedgerGateway:
             ],
         }
 
+    def recent_transactions(self) -> dict[str, Any]:
+        """Give extraction a small, read-only view of the latest shop activity."""
+
+        core = _load_core()
+        rows = self.session.execute(
+            core.select(core.LedgerEntry, core.Customer)
+            .join(core.Customer, core.Customer.id == core.LedgerEntry.customer_id)
+            .order_by(core.LedgerEntry.created_at.desc(), core.LedgerEntry.id.desc())
+            .limit(20)
+        ).all()
+        return {
+            "currency": "INR",
+            "entries": [
+                {
+                    "customer_name": customer.display_name,
+                    "entry_type": entry.entry_type.value,
+                    "signed_amount": str(entry.amount),
+                    "item_name": (entry.attributes or {}).get("item_name"),
+                    "quantity": (entry.attributes or {}).get("quantity"),
+                    "unit": (entry.attributes or {}).get("unit"),
+                    "created_at": entry.created_at.isoformat() if entry.created_at else None,
+                }
+                for entry, customer in rows
+            ],
+        }
+
     def commit(self) -> None:
         self.session.commit()
 

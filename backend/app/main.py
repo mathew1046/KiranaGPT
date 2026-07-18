@@ -18,6 +18,7 @@ from .models import Customer, LedgerEntry
 from .routers.inventory import build_inventory_router
 from .routes.core import protected_router, public_router
 from .routes.llm import create_llm_router
+from .routers.voice import voice_router
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -88,6 +89,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(public_router)
     app.include_router(protected_router)
     app.include_router(create_llm_router())
+    app.include_router(voice_router)
     app.include_router(
         build_inventory_router(inventory_service, require_demo_store, load_daily_entries)
     )

@@ -40,12 +40,28 @@ from .schemas import (
 TStructured = TypeVar("TStructured", bound=BaseModel)
 
 
-LEDGER_EXTRACTION_INSTRUCTIONS = """Extract exactly one Kirana customer-ledger event from the transcript.
-Return a sale when the customer receives goods on credit and a payment when the
-customer pays down an outstanding balance. The amount must be the positive
-absolute INR amount, never zero. Do not infer a customer, amount, or item that
-is absent from the transcript; use a low confidence when intent is uncertain.
-Only return data covered by the supplied JSON Schema."""
+LEDGER_EXTRACTION_INSTRUCTIONS = """You are the careful ledger clerk for a Kirana shop in India.
+Your job is to turn ONE freshly transcribed shop-floor utterance into exactly
+one proposed, append-only customer-ledger event. The shopkeeper will review
+the proposal before it is saved.
+
+Interpretation rules:
+- A SALE means a named customer took goods now and will owe the shop. A PAYMENT
+  means the named customer paid down an existing balance. Never treat a cash
+  sale as a customer-credit SALE unless the utterance clearly says credit/udhaar
+  or an existing customer balance is being changed.
+- Amount is an absolute positive INR amount. Never use a prior transaction to
+  invent a missing name, item, quantity, or amount.
+- The supplied recent transactions are context only: use them to disambiguate
+  an explicitly named customer or familiar item, never to create or duplicate
+  an event. Never return a historical event instead of the new utterance.
+- Preserve ambiguity: if the speech transcript is incomplete, has conflicting
+  amounts, names, or intent, use a low confidence rather than guessing.
+- The ledger is append-only. Do not suggest edits, reversals, balances, or more
+  than one event. Respect the locale and treat all names as user-provided text.
+
+Return only an object matching the JSON Schema. No prose, markdown, or fields
+outside that schema."""
 
 CORRECTION_EXTRACTION_INSTRUCTIONS = """Interpret a shopkeeper's correction for the referenced ledger event.
 Return cancel only when the event should be fully reversed. Return amend only
@@ -256,10 +272,12 @@ class ProcessingService:
             output_model=LedgerExtraction,
             instructions=LEDGER_EXTRACTION_INSTRUCTIONS,
             payload={
+                "role": "Kirana shop ledger clerk",
                 "transcript": item.transcript,
                 "captured_at": item.captured_at,
                 "speaker_id": item.speaker_id,
                 "locale": item.locale,
+                "recent_transactions": self._recent_transactions(),
             },
         )
         if not resolution.accepted:
@@ -355,6 +373,18 @@ class ProcessingService:
             route=ProcessingRoute.ESCALATED,
             reason=ReviewReason.CONFIDENCE_BELOW_THRESHOLD,
         )
+
+    def _recent_transactions(self) -> Mapping[str, Any]:
+        """Bounded evidence for the extraction prompt; failures expose nothing."""
+
+        provider = getattr(self.ledger_gateway, "recent_transactions", None)
+        if not callable(provider):
+            return {"entries": []}
+        try:
+            context = provider()
+        except Exception:
+            return {"entries": []}
+        return context if isinstance(context, Mapping) else {"entries": []}
 
     @staticmethod
     def _adapter_reason(failure: AdapterFailure | None) -> ReviewReason:

@@ -39,15 +39,16 @@ class OpenAISettings:
     """Environment-configured model selection without exposing API secrets."""
 
     api_key: str | None = field(default=None, repr=False)
-    extraction_model: str = "gpt-4.1-mini"
-    escalation_model: str = "gpt-4.1"
-    query_model: str = "gpt-4.1-mini"
+    transcription_model: str = "whisper-1"
+    extraction_model: str = "gpt-5.4-mini"
+    escalation_model: str = "gpt-5.4-mini"
+    query_model: str = "gpt-5.4-mini"
     max_attempts: int = 2
 
     def __post_init__(self) -> None:
         if self.max_attempts < 1 or self.max_attempts > 3:
             raise ValueError("max_attempts must be between 1 and 3")
-        if not all(self.model_for(role) for role in ModelRole):
+        if not self.transcription_model or not all(self.model_for(role) for role in ModelRole):
             raise ValueError("OpenAI model names must not be empty")
 
     @classmethod
@@ -62,9 +63,10 @@ class OpenAISettings:
             attempts = 2
         return cls(
             api_key=(source.get("OPENAI_API_KEY") or "").strip() or None,
-            extraction_model=(source.get("OPENAI_EXTRACTION_MODEL") or "gpt-4.1-mini").strip(),
-            escalation_model=(source.get("OPENAI_ESCALATION_MODEL") or "gpt-4.1").strip(),
-            query_model=(source.get("OPENAI_QUERY_MODEL") or "gpt-4.1-mini").strip(),
+            transcription_model=(source.get("OPENAI_TRANSCRIPTION_MODEL") or "whisper-1").strip(),
+            extraction_model=(source.get("OPENAI_EXTRACTION_MODEL") or "gpt-5.4-mini").strip(),
+            escalation_model=(source.get("OPENAI_ESCALATION_MODEL") or "gpt-5.4-mini").strip(),
+            query_model=(source.get("OPENAI_QUERY_MODEL") or "gpt-5.4-mini").strip(),
             max_attempts=attempts,
         )
 
@@ -74,9 +76,10 @@ class OpenAISettings:
 
         return cls(
             api_key=getattr(settings, "openai_api_key", None),
-            extraction_model=getattr(settings, "openai_extraction_model", "gpt-4.1-mini"),
-            escalation_model=getattr(settings, "openai_escalation_model", "gpt-4.1"),
-            query_model=getattr(settings, "openai_query_model", "gpt-4.1-mini"),
+            transcription_model=getattr(settings, "openai_transcription_model", "whisper-1"),
+            extraction_model=getattr(settings, "openai_extraction_model", "gpt-5.4-mini"),
+            escalation_model=getattr(settings, "openai_escalation_model", "gpt-5.4-mini"),
+            query_model=getattr(settings, "openai_query_model", "gpt-5.4-mini"),
         )
 
     def model_for(self, role: ModelRole) -> str:

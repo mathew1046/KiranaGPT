@@ -39,6 +39,8 @@ class _KiranaDashboardPageState extends State<KiranaDashboardPage> {
           ..addListener(_refresh)
           ..load();
     _transcriptController = TextEditingController();
+    // VAD remains active for the lifetime of this foreground dashboard.
+    Future<void>.microtask(_controller.startContinuousCapture);
   }
 
   @override
@@ -187,7 +189,11 @@ class _CaptureStatusCard extends StatelessWidget {
     final voice = controller.voiceCapture;
     final manualOnly =
         voice.availability == VoiceCaptureAvailability.manualOnly;
-    final captureLabel = manualOnly ? 'Use manual entry' : 'Capture voice';
+    final captureLabel = manualOnly
+        ? 'Use manual entry'
+        : voice.isCapturing
+        ? 'Stop listening'
+        : 'Start listening';
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -253,7 +259,7 @@ class _CaptureStatusCard extends StatelessWidget {
                               ? Icons.edit_note_outlined
                               : Icons.mic_none,
                         ),
-                  label: Text(voice.isCapturing ? 'Capturing…' : captureLabel),
+                  label: Text(captureLabel),
                 ),
                 if (manualOnly)
                   const _InfoChip(
@@ -273,9 +279,9 @@ class _CaptureStatusCard extends StatelessWidget {
       case VoiceCaptureStatus.ready:
         return manualOnly
             ? 'Manual text entry is ready'
-            : 'Ready for a short capture';
+            : 'Starting continuous listening';
       case VoiceCaptureStatus.capturing:
-        return 'Listening for a final transcript';
+        return 'Listening continuously; speech turns are transcribed automatically';
       case VoiceCaptureStatus.manualEntry:
         return 'Type the approved transcript';
       case VoiceCaptureStatus.transcriptReady:

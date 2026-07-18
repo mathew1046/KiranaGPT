@@ -34,9 +34,10 @@ class Settings:
     app_api_key: str = DEFAULT_DEVELOPMENT_API_KEY
     app_env: str = "development"
     openai_api_key: str | None = None
-    openai_extraction_model: str = "gpt-4.1-mini"
-    openai_escalation_model: str = "gpt-4.1"
-    openai_query_model: str = "gpt-4.1-mini"
+    openai_transcription_model: str = "whisper-1"
+    openai_extraction_model: str = "gpt-5.4-mini"
+    openai_escalation_model: str = "gpt-5.4-mini"
+    openai_query_model: str = "gpt-5.4-mini"
     model_dir: Path = Path("../models")
 
     @classmethod
@@ -53,9 +54,10 @@ class Settings:
             app_api_key=app_api_key,
             app_env=app_env,
             openai_api_key=openai_api_key,
-            openai_extraction_model=os.getenv("OPENAI_EXTRACTION_MODEL", "gpt-4.1-mini").strip(),
-            openai_escalation_model=os.getenv("OPENAI_ESCALATION_MODEL", "gpt-4.1").strip(),
-            openai_query_model=os.getenv("OPENAI_QUERY_MODEL", "gpt-4.1-mini").strip(),
+            openai_transcription_model=os.getenv("OPENAI_TRANSCRIPTION_MODEL", "whisper-1").strip(),
+            openai_extraction_model=os.getenv("OPENAI_EXTRACTION_MODEL", "gpt-5.4-mini").strip(),
+            openai_escalation_model=os.getenv("OPENAI_ESCALATION_MODEL", "gpt-5.4-mini").strip(),
+            openai_query_model=os.getenv("OPENAI_QUERY_MODEL", "gpt-5.4-mini").strip(),
             model_dir=Path(os.getenv("MODEL_DIR", "../models")),
         )
         settings.validate()
