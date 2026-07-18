@@ -103,14 +103,14 @@ class SqlAlchemyLedgerGateway:
             raise ReviewRequiredError(ReviewReason.PERSISTENCE_UNAVAILABLE)
         store_id = "default-store"
         if extraction.operation is ShopCommandType.STOCK_RESTOCK:
-            if extraction.quantity is None or extraction.unit is None:
+            if extraction.quantity is None:
                 raise ReviewRequiredError(ReviewReason.INVALID_MODEL_OUTPUT)
             item = self.inventory_service.restock(
                 store_id,
                 InventoryRestock(
                     item_name=extraction.item_name,
                     quantity=extraction.quantity,
-                    unit=extraction.unit,
+                    unit=extraction.unit or "unit",
                     last_price_inr=extraction.price_inr,
                 ),
             )
@@ -120,14 +120,14 @@ class SqlAlchemyLedgerGateway:
         if existing is None:
             raise ReviewRequiredError(ReviewReason.TARGET_NOT_FOUND)
         if extraction.operation is ShopCommandType.STOCK_SET:
-            if extraction.quantity is None or extraction.unit is None:
+            if extraction.quantity is None:
                 raise ReviewRequiredError(ReviewReason.INVALID_MODEL_OUTPUT)
             item = self.inventory_service.update_item(
                 store_id,
                 existing.id,
                 InventoryUpdate(
                     quantity_on_hand=extraction.quantity,
-                    unit=extraction.unit,
+                    unit=extraction.unit or existing.unit,
                     low_stock_threshold=existing.low_stock_threshold,
                     last_price_inr=extraction.price_inr or existing.last_price_inr,
                 ),

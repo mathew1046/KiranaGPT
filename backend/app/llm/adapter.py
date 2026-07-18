@@ -145,7 +145,7 @@ class OpenAIAdapter:
                             "type": "json_schema",
                             "name": _schema_name(output_model),
                             "strict": True,
-                            "schema": output_model.model_json_schema(),
+                            "schema": _openai_response_schema(output_model),
                         }
                     },
                     # Transcript-bearing requests must not be stored by OpenAI.
@@ -214,6 +214,30 @@ def _schema_name(output_model: type[BaseModel]) -> str:
 
     words = re.sub(r"(?<!^)(?=[A-Z])", "_", output_model.__name__).lower()
     return re.sub(r"[^a-z0-9_]+", "_", words).strip("_") or "structured_output"
+
+
+def _openai_response_schema(output_model: type[BaseModel]) -> dict[str, Any]:
+    """Remove JSON-Schema keywords unsupported by strict Responses output.
+
+    Pydantic emits a regex for decimal-as-string alternatives. GPT-5.5 rejects
+    regex lookarounds in a strict response schema, so omit that provider-side
+    hint only. The parsed response still passes the original Pydantic decimal
+    validation before it can be persisted.
+    """
+
+    schema = json.loads(json.dumps(output_model.model_json_schema()))
+
+    def clean(value: Any) -> None:
+        if isinstance(value, dict):
+            value.pop("pattern", None)
+            for child in value.values():
+                clean(child)
+        elif isinstance(value, list):
+            for child in value:
+                clean(child)
+
+    clean(schema)
+    return schema
 
 
 def _response_text(response: Any) -> str:

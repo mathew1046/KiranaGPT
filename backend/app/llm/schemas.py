@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -97,6 +98,50 @@ class IngestRequest(StrictSchema):
     items: list[TranscriptItem] = Field(min_length=1, max_length=50)
 
 
+class LedgerExtraction(StrictSchema):
+    """Strict structured output before the voice agent changes shop state.
+
+    ``amount`` is always a positive absolute INR value.  The persistence
+    gateway assigns its signed ledger impact: sales are positive and payments
+    are negative.  Nullable fields intentionally have no defaults so strict
+    JSON Schema output must include them as either a value or ``null``.
+    """
+
+    operation: ShopCommandType
+    entry_type: LedgerEventType | None
+    customer_name: str | None = Field(min_length=1, max_length=160)
+    amount: Decimal | None = Field(gt=0, max_digits=12, decimal_places=2)
+    description: str | None = Field(max_length=500)
+    item_name: str | None = Field(max_length=160)
+    quantity: Decimal | None = Field(gt=0, max_digits=10, decimal_places=3)
+    unit: str | None = Field(max_length=32)
+    price_inr: Decimal | None = Field(ge=0, max_digits=12, decimal_places=2)
+    confidence: float = Field(ge=0, le=1)
+
+    @model_validator(mode="after")
+    def require_complete_item_details(self) -> "LedgerExtraction":
+        if self.operation in {ShopCommandType.CREDIT_SALE, ShopCommandType.CREDIT_PAYMENT}:
+            expected = (
+                LedgerEventType.SALE
+                if self.operation is ShopCommandType.CREDIT_SALE
+                else LedgerEventType.PAYMENT
+            )
+            if self.entry_type is not expected or self.customer_name is None or self.amount is None:
+                raise ValueError("credit commands require matching entry_type, customer_name, and amount")
+        elif self.entry_type is not None or self.customer_name is not None or self.amount is not None:
+            raise ValueError("stock commands must not include ledger fields")
+
+        if self.operation in {ShopCommandType.STOCK_RESTOCK, ShopCommandType.STOCK_SET}:
+            if self.item_name is None or self.quantity is None:
+                raise ValueError("stock restock and set commands require item_name and quantity")
+        elif self.operation is ShopCommandType.STOCK_REMOVE:
+            if self.item_name is None:
+                raise ValueError("stock removal requires item_name")
+        elif any(value is not None for value in (self.item_name, self.quantity, self.unit)) and self.item_name is None:
+            raise ValueError("item_name is required when item details are supplied")
+        return self
+
+
 class AnalysisPreviewRequest(StrictSchema):
     """One manually reviewed transcript, before it can change shop data."""
 
@@ -121,50 +166,6 @@ class AnalysisPreviewResponse(StrictSchema):
             self.proposal_id is not None or self.proposal is not None
         ):
             raise ValueError("review previews cannot include a proposal")
-        return self
-
-
-class LedgerExtraction(StrictSchema):
-    """Strict structured output before the voice agent changes shop state.
-
-    ``amount`` is always a positive absolute INR value.  The persistence
-    gateway assigns its signed ledger impact: sales are positive and payments
-    are negative.  Nullable fields intentionally have no defaults so strict
-    JSON Schema output must include them as either a value or ``null``.
-    """
-
-    operation: ShopCommandType = ShopCommandType.CREDIT_SALE
-    entry_type: LedgerEventType | None = None
-    customer_name: str | None = Field(default=None, min_length=1, max_length=160)
-    amount: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
-    description: str | None = Field(default=None, max_length=500)
-    item_name: str | None = Field(max_length=160)
-    quantity: Decimal | None = Field(gt=0, max_digits=10, decimal_places=3)
-    unit: str | None = Field(max_length=32)
-    price_inr: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
-    confidence: float = Field(ge=0, le=1)
-
-    @model_validator(mode="after")
-    def require_complete_item_details(self) -> "LedgerExtraction":
-        if self.operation in {ShopCommandType.CREDIT_SALE, ShopCommandType.CREDIT_PAYMENT}:
-            expected = (
-                LedgerEventType.SALE
-                if self.operation is ShopCommandType.CREDIT_SALE
-                else LedgerEventType.PAYMENT
-            )
-            if self.entry_type is not expected or self.customer_name is None or self.amount is None:
-                raise ValueError("credit commands require matching entry_type, customer_name, and amount")
-        elif self.entry_type is not None or self.customer_name is not None or self.amount is not None:
-            raise ValueError("stock commands must not include ledger fields")
-
-        if self.operation in {ShopCommandType.STOCK_RESTOCK, ShopCommandType.STOCK_SET}:
-            if self.item_name is None or self.quantity is None or self.unit is None:
-                raise ValueError("stock restock and set commands require item_name, quantity, and unit")
-        elif self.operation is ShopCommandType.STOCK_REMOVE:
-            if self.item_name is None:
-                raise ValueError("stock removal requires item_name")
-        elif any(value is not None for value in (self.item_name, self.quantity, self.unit)) and self.item_name is None:
-            raise ValueError("item_name is required when item details are supplied")
         return self
 
 

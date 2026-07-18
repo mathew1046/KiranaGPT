@@ -69,7 +69,8 @@ Interpretation rules:
   ``credit_payment``, ``stock_restock``, ``stock_set``, or ``stock_remove``.
   Credit operations require ``entry_type``, ``customer_name``, and positive
   ``amount``. Stock restock/set operations require ``item_name``, positive
-  ``quantity``, and ``unit``. Stock removal requires ``item_name``.
+  ``quantity``; supply ``unit`` whenever it is spoken, otherwise use ``piece``
+  for countable goods. Stock removal requires ``item_name``.
 - Include every schema field. Use JSON null for fields that do not apply; for
   stock operations ledger fields must be null. Do not put JSON inside a string.
 
